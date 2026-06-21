@@ -92,3 +92,32 @@ export async function getImplementorBranch(worktreePath: string): Promise<string
   const result = await $`git -C ${worktreePath} branch --show-current`.text();
   return result.trim();
 }
+
+// ─── Mode detection & greenfield bootstrap ─────────────────────────────────────
+
+/** Existing repo with commits → maintenance; otherwise greenfield. */
+export async function inferMode(targetDir: string): Promise<"maintenance" | "greenfield"> {
+  const hasHead = await $`git -C ${targetDir} rev-parse --verify HEAD`.quiet().nothrow();
+  return hasHead.exitCode === 0 ? "maintenance" : "greenfield";
+}
+
+/**
+ * Prepare a target directory for a greenfield build: ensure it exists, is a git
+ * repo on `branch`, and has an initial commit so worktrees and diffs have a base.
+ * Idempotent — safe to call on an already-initialized directory.
+ */
+export async function bootstrapGreenfield(targetDir: string, branch: string): Promise<void> {
+  await fs.mkdir(targetDir, { recursive: true });
+
+  const isRepo = await $`git -C ${targetDir} rev-parse --is-inside-work-tree`.quiet().nothrow();
+  if (isRepo.exitCode !== 0) {
+    await $`git -C ${targetDir} init -b ${branch}`.quiet();
+  }
+
+  const hasHead = await $`git -C ${targetDir} rev-parse --verify HEAD`.quiet().nothrow();
+  if (hasHead.exitCode !== 0) {
+    // Empty initial commit on `branch` so the panel/impl worktrees and the
+    // validator diff have a base to work from.
+    await $`git -C ${targetDir} -c user.email=council@local -c user.name=Council commit --allow-empty -m ${"council: initial scaffold"}`.quiet();
+  }
+}

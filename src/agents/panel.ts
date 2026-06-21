@@ -5,8 +5,11 @@ import { store } from "../server/store.ts";
 import type { PanelResult } from "../core/types.ts";
 import type { PanelistConfig } from "../../config/panelists.ts";
 
-export async function runPanel(panelists: PanelistConfig[]): Promise<PanelResult[]> {
-  const settled = await Promise.allSettled(panelists.map(runPanelist));
+export async function runPanel(
+  panelists: PanelistConfig[],
+  opts: { specText?: string } = {}
+): Promise<PanelResult[]> {
+  const settled = await Promise.allSettled(panelists.map((p) => runPanelist(p, opts.specText)));
   const results: PanelResult[] = [];
 
   for (const [i, outcome] of settled.entries()) {
@@ -28,18 +31,27 @@ export async function runPanel(panelists: PanelistConfig[]): Promise<PanelResult
   return results;
 }
 
-async function runPanelist(panelist: PanelistConfig): Promise<PanelResult> {
+async function runPanelist(panelist: PanelistConfig, specText?: string): Promise<PanelResult> {
   store.panelistStarted(panelist.id);
-  store.log("info", `${panelist.label} (${panelist.tool}) reading codebase…`);
 
-  const codebase = await serializeCodebase(panelist.worktreePath);
-  store.log("info", `${panelist.label} analyzing (${Math.round(codebase.length / 1000)}k chars)…`);
+  let userMessage: string;
+  if (specText !== undefined) {
+    // Greenfield: there is no codebase yet — reason about the spec.
+    store.log("info", `${panelist.label} (${panelist.tool}) reading project spec…`);
+    userMessage = `You are helping design a NEW project from scratch. Analyze the following specification from your expert perspective and identify what the design must get right.\n\n${specText}`;
+  } else {
+    // Maintenance: serialize and review the existing codebase.
+    store.log("info", `${panelist.label} (${panelist.tool}) reading codebase…`);
+    const codebase = await serializeCodebase(panelist.worktreePath);
+    store.log("info", `${panelist.label} analyzing (${Math.round(codebase.length / 1000)}k chars)…`);
+    userMessage = `Please analyze the following codebase from your expert perspective.\n\n${codebase}`;
+  }
 
   const raw = await runCLI({
     tool:         panelist.tool,
     model:        panelist.model,
     systemPrompt: panelist.systemPrompt,
-    userMessage:  `Please analyze the following codebase from your expert perspective.\n\n${codebase}`,
+    userMessage,
     cwd:          panelist.worktreePath,   // run inside the worktree
     label:        panelist.label,
     timeoutMs:    600_000,

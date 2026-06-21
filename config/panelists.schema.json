@@ -21,9 +21,25 @@
     "forge": {
       "$ref": "#/definitions/forge",
       "description": "Where to open the PR/MR (GitHub, GitLab, Gitea/Codeberg, Azure DevOps, or manual)"
+    },
+    "evaluation": {
+      "$ref": "#/definitions/evaluation",
+      "description": "Optional build/test/run commands that verify the implementation actually works"
     }
   },
   "definitions": {
+    "evaluation": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "description": "Off by default. Executes agent-generated code — run inside the Docker sandbox." },
+        "install": { "type": "string", "description": "e.g. bun install" },
+        "build": { "type": "string", "description": "e.g. bun run build" },
+        "test": { "type": "string", "description": "e.g. bun test" },
+        "run": { "type": "string", "description": "Optional smoke command" },
+        "cwd": { "type": "string", "description": "Working dir relative to the worktree" },
+        "timeoutMs": { "type": "integer", "minimum": 1, "description": "Per-command timeout in ms (default 300000)" }
+      }
+    },
     "forge": {
       "type": "object",
       "required": ["provider"],

@@ -3,24 +3,28 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { writeTempFile } from "../core/cli-runner.ts";
 import { store } from "../server/store.ts";
-import type { JudgePlan, PlanTask } from "../core/types.ts";
+import type { JudgePlan, PlanTask, PipelineMode } from "../core/types.ts";
 
-export async function runImplementor(worktreePath: string, plan: JudgePlan): Promise<void> {
+export async function runImplementor(
+  worktreePath: string,
+  plan: JudgePlan,
+  mode: PipelineMode = "maintenance"
+): Promise<void> {
   const sorted = [...plan.tasks].sort((a, b) => {
     const order = { P0: 0, P1: 1, P2: 2 };
     return order[a.priority] - order[b.priority];
   });
 
   for (const task of sorted) {
-    await executeTask(worktreePath, task);
+    await executeTask(worktreePath, task, mode);
   }
 }
 
-async function executeTask(worktreePath: string, task: PlanTask): Promise<void> {
+async function executeTask(worktreePath: string, task: PlanTask, mode: PipelineMode): Promise<void> {
   store.taskStarted(task.id);
   store.log("info", `Implementing [${task.priority}] ${task.id}: ${task.action} ${task.file}`);
 
-  const systemFile = await writeTempFile(buildSystemPrompt(worktreePath, task), `task-${task.id}`);
+  const systemFile = await writeTempFile(buildSystemPrompt(worktreePath, task, mode), `task-${task.id}`);
 
   try {
     const result = await $`claude \
@@ -46,8 +50,8 @@ async function executeTask(worktreePath: string, task: PlanTask): Promise<void> 
   }
 }
 
-function buildSystemPrompt(worktreePath: string, task: PlanTask): string {
-  return `You are Claude Code, an implementation agent. You have been given a single, concrete task to perform in a codebase.
+function buildSystemPrompt(worktreePath: string, task: PlanTask, mode: PipelineMode): string {
+  const header = `You are Claude Code, an implementation agent. You have been given a single, concrete task to perform in a ${mode === "greenfield" ? "new project being built from scratch" : "codebase"}.
 
 Task ID: ${task.id}
 Priority: ${task.priority}
@@ -55,14 +59,23 @@ File: ${task.file} (full path: ${path.join(worktreePath, task.file)})
 Action: ${task.action}
 Instruction: ${task.instruction}
 Rationale: ${task.rationale}
-Source panelists: ${task.source.join(", ")}
+Source: ${task.source.join(", ")}`;
 
-RULES:
+  const rules = mode === "greenfield"
+    ? `RULES:
+- Create or modify the specified file to implement the task.
+- You may create new files this task requires (configs, modules it imports).
+- Do not run shell commands.
+- Work only in the provided directory: ${worktreePath}
+- Write complete, working code — this is a fresh project with no prior implementation.`
+    : `RULES:
 - Only modify the specified file.
 - Do not run shell commands.
 - Do not add extra dependencies.
 - Work only in the provided directory: ${worktreePath}
 - Prefer minimal, focused changes.`;
+
+  return `${header}\n\n${rules}`;
 }
 
 async function commitTask(worktreePath: string, task: PlanTask): Promise<void> {

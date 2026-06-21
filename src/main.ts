@@ -7,14 +7,17 @@ import { loadConfig }    from "../config/panelists.ts";
 import { startServer }   from "./server/server.ts";
 import { store }         from "./server/store.ts";
 import { initTelegramBot, stopPolling } from "./server/telegram.ts";
-import { createWorktrees, removeWorktrees, createImplementorWorktree, removeImplementorWorktree } from "./core/worktree.ts";
+import { createWorktrees, removeWorktrees, createImplementorWorktree, removeImplementorWorktree, inferMode, bootstrapGreenfield } from "./core/worktree.ts";
+import { loadSpec } from "./core/spec.ts";
 import { runPanel }      from "./agents/panel.ts";
 import { runJudge }      from "./agents/judge.ts";
 import { runImplementor } from "./agents/implementor.ts";
 import { runValidator }  from "./agents/validator.ts";
 import { runHIL }        from "./hil/review.ts";
 import { createPR }      from "./utils/pr.ts";
-import type { PipelineRun } from "./core/types.ts";
+import { planSignature, isStalled, formatValidatorFeedback } from "./core/loop.ts";
+import { runEvaluation } from "./core/evaluate.ts";
+import type { PipelineRun, ValidatorVerdict, PipelineMode } from "./core/types.ts";
 
 export interface ConductorConfig {
   repoPath: string;
@@ -24,6 +27,8 @@ export interface ConductorConfig {
   worktreeBase?: string;
   port?: number;
   configPath?: string;        // override panelists.json location
+  mode?: PipelineMode;        // explicit override; inferred when omitted
+  specPath?: string;          // greenfield: path to a spec document
 }
 
 let booted = false;
@@ -72,17 +77,25 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
   try {
     await boot(port);
 
+    // ── Resolve mode (explicit override, else --spec, else infer from repo) ───
+    const mode: PipelineMode =
+      config.mode ?? (config.specPath ? "greenfield" : await inferMode(config.repoPath));
+
     // ── Load config fresh from panelists.json ────────────────────────────────
     // Re-read on every pipeline run so edits take effect immediately.
     let council;
     try {
-      council = loadConfig(worktreeBase, runId, config.configPath);
+      council = loadConfig(worktreeBase, runId, config.configPath, mode);
     } catch (e) {
       console.error("  ✗ Invalid panelists.json:", e);
       throw e;
     }
 
-    const { panelists, judge, validator, forge } = council;
+    const { panelists, judge, validator, forge, evaluation } = council;
+    store.log("info", `Mode: ${mode}`);
+    if (evaluation?.enabled) {
+      store.log("warn", "Evaluation enabled — build/test/run commands will execute agent-generated code. Use the Docker sandbox.");
+    }
 
     store.init({
       runId,
@@ -103,6 +116,10 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
     try {
       // ── Worktrees ───────────────────────────────────────────────────────────
       store.setStage("worktrees");
+      if (mode === "greenfield") {
+        store.log("info", "Bootstrapping new project…");
+        await bootstrapGreenfield(config.repoPath, config.branch);
+      }
       store.log("info", "Creating git worktrees…");
       await createWorktrees(config.repoPath, config.branch, panelists);
       await createImplementorWorktree(config.repoPath, config.branch, implPath, runId);
@@ -110,7 +127,10 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
 
       // ── Panel ─────────────────────────────────────────────────────────────────
       store.setStage("panel");
-      const panelResults = await runPanel(panelists);
+      const specText = mode === "greenfield"
+        ? await loadSpec(config.specPath, config.projectContext)
+        : undefined;
+      const panelResults = await runPanel(panelists, { specText });
       run.panelResults = panelResults;
 
       // ── Plan → implement → validate → HIL loop ──────────────────────────────
@@ -121,19 +141,25 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
       planLoop: while (true) {
         run.iterations = 0;
 
+        // Feedback carried across iterations so retries actually converge.
+        let validatorFeedback: string | undefined;
+        let prevPlanSig: string | undefined;
+        let prevVerdict: ValidatorVerdict | undefined;
+
         // ── Iteration loop (judge → implement → validate) ──────────────────────
         while (run.iterations < maxIter) {
           run.iterations++;
           store.setIteration(run.iterations);
 
           store.setStage("judge");
-          run.judgePlan = await runJudge(judge, config.projectContext, panelResults, revisePlanNotes);
+          run.judgePlan = await runJudge(judge, config.projectContext, panelResults, revisePlanNotes, validatorFeedback);
           revisePlanNotes = undefined; // consumed by the judge
+          const currPlanSig = planSignature(run.judgePlan);
 
           store.setStage("implement");
           let implError: string | null = null;
           try {
-            await runImplementor(implPath, run.judgePlan);
+            await runImplementor(implPath, run.judgePlan, mode);
             store.emit_({ type: "impl_complete", ts: Date.now() });
           } catch (e) {
             implError = String(e);
@@ -141,19 +167,35 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
           }
 
           store.setStage("validate");
-          run.validatorReport = await runValidator(validator, implPath, config.branch, run.judgePlan);
+          let evalResult;
+          if (evaluation?.enabled) {
+            store.log("info", "Running evaluation (build/test)…");
+            evalResult = await runEvaluation(implPath, evaluation);
+            store.log(evalResult.passed ? "info" : "warn", `Evaluation ${evalResult.passed ? "passed" : "failed"}.`);
+          }
+          run.validatorReport = await runValidator(validator, implPath, config.branch, run.judgePlan, evalResult);
+          const currVerdict = run.validatorReport.verdict;
 
           if (implError) {
             // A failed/partial implementation must never auto-PR — let a human decide.
             store.log("warn", "Implementation did not complete — escalating to human review.");
             break;
           }
-          if (run.validatorReport.verdict === "PASS") break;
+          if (currVerdict === "PASS") break;
           if (run.iterations >= maxIter) {
             store.log("warn", "Max iterations — escalating to HIL");
             break;
           }
-          store.log("warn", `Validator ${run.validatorReport.verdict} — retrying…`);
+          if (isStalled({ prevPlanSig, currPlanSig, prevVerdict, currVerdict })) {
+            store.log("warn", "No progress (same plan, no improvement) — escalating to HIL");
+            break;
+          }
+
+          // Feed this iteration's findings into the next judge call.
+          validatorFeedback = formatValidatorFeedback(run.validatorReport);
+          prevPlanSig = currPlanSig;
+          prevVerdict = currVerdict;
+          store.log("warn", `Validator ${currVerdict} — retrying with feedback…`);
         }
 
         // ── HIL ──────────────────────────────────────────────────────────────────
@@ -182,11 +224,12 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
               instruction: run.hilResponse.reviseImplInstructions,
               rationale: "Human reviewer requested", priority: "P0", source: ["hil"],
             });
-            await runImplementor(implPath, run.judgePlan);
+            await runImplementor(implPath, run.judgePlan, mode);
 
             // Re-validate the human-requested change before opening the PR.
             store.setStage("validate");
-            run.validatorReport = await runValidator(validator, implPath, config.branch, run.judgePlan);
+            const reEval = evaluation?.enabled ? await runEvaluation(implPath, evaluation) : undefined;
+            run.validatorReport = await runValidator(validator, implPath, config.branch, run.judgePlan, reEval);
             if (run.validatorReport.verdict === "REJECT") {
               store.log("warn", "HIL revision failed validation — proceeding to PR anyway.");
             }
@@ -249,12 +292,19 @@ function parseArgs(): ConductorConfig {
 Usage: bun run src/main.ts [options]
 
 Options:
-  --repo <path>        Path to git repository (required)
-  --branch <name>      Branch to analyze (default: main)
-  --context <text>     Project context (required)
+  --repo <path>        Target directory: existing repo (maintenance) or where to
+                       create a new project (greenfield) (required)
+  --branch <name>      Branch to analyze / build on (default: main)
+  --context <text>     Project goal (maintenance) or the idea/spec (greenfield) (required)
+  --mode <m>           maintenance | greenfield (inferred from --repo/--spec if omitted)
+  --spec <path>        Greenfield: path to a specification document (implies greenfield)
   --port <n>           GUI port (default: 3000)
   --max-iter <n>       Max iterations (default: 3)
   --config <path>      panelists.json to use (default: bundled config/panelists.json)
+
+Modes:
+  maintenance — analyze an existing repo and propose/implement fixes (default for a repo)
+  greenfield  — build a new project from --context/--spec (default for an empty dir)
 
 Agent configuration:
   Edit config/panelists.json — reloaded on every run, no restart needed.
@@ -277,6 +327,11 @@ Environment variables:
   if (!context) { console.error("--context is required"); process.exit(1); }
 
   const configPath = get("--config");
+  const specPath   = get("--spec");
+  const modeArg    = get("--mode");
+  if (modeArg && modeArg !== "maintenance" && modeArg !== "greenfield") {
+    console.error("--mode must be 'maintenance' or 'greenfield'"); process.exit(1);
+  }
 
   return {
     repoPath:       path.resolve(repo!),
@@ -285,6 +340,8 @@ Environment variables:
     maxIterations:  parseInt(get("--max-iter") ?? "3"),
     port:           parseInt(get("--port") ?? "3000"),
     ...(configPath ? { configPath: path.resolve(configPath) } : {}),
+    ...(specPath   ? { specPath:   path.resolve(specPath) }   : {}),
+    ...(modeArg    ? { mode: modeArg as PipelineMode }        : {}),
   };
 }
 

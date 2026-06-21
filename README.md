@@ -62,6 +62,30 @@ To analyze a different project, point `--repo` at any git repo — the council r
 
 ---
 
+## 🧭 Modes: maintain or build
+
+The same council works in two modes:
+
+- **🔧 maintenance** — analyze an *existing* repo and propose/implement fixes (today's flow).
+- **🌱 greenfield** — *build a new project* from an idea/spec: the council scaffolds an empty repo, the panel designs the architecture, the implementor generates the code, and the loop iterates until it works.
+
+The mode is **inferred** (existing repo → maintenance; empty dir or `--spec` → greenfield) and can be forced with `--mode`.
+
+```bash
+# Greenfield: build a new project from a one-line idea
+bun run src/main.ts \
+  --repo /path/to/empty/dir \
+  --context "A Bun CLI that reverses stdin, with tests" \
+  --mode greenfield
+
+# …or from a fuller spec document
+bun run src/main.ts --repo ./my-new-app --spec ./SPEC.md --context "My app"
+```
+
+In greenfield mode, panelist prompts use a `config/prompts/greenfield/*.md` variant when present (falling back to the standard prompt otherwise). Pair greenfield with [evaluation](#-iteration--evaluation) so "done" means *it builds and tests pass*, and run it in the [Docker sandbox](#-docker).
+
+---
+
 ## 🐳 Docker
 
 ```bash
@@ -157,6 +181,32 @@ Configure it under a `forge` block in `config/panelists.json` (or the **Config**
 | `manual` | — | — | — |
 
 Tokens are referenced by **env-var name** only — never stored in `panelists.json`.
+
+---
+
+## 🔁 Iteration & evaluation
+
+When the validator returns `REJECT`/`PARTIAL`, the council loops back to the judge — and now **feeds the validator's findings into the next plan** so retries actually converge instead of repeating themselves. The loop stops on `PASS`, on reaching `--max-iter`, or when it detects **no progress** (same plan, no improvement), in which case it escalates to human review.
+
+Optionally, the council can **run the code** to get a real "does it work?" signal. Configure an `evaluation` block (or use the **Config** tab):
+
+```json
+{
+  "evaluation": {
+    "enabled": true,
+    "install": "bun install",
+    "build": "bun run build",
+    "test": "bun test",
+    "run": "",
+    "cwd": "",
+    "timeoutMs": 300000
+  }
+}
+```
+
+Commands run in order in the implementation worktree; a build/test failure **blocks a `PASS`** and its output is fed back into the loop.
+
+> ⚠️ **Safety:** evaluation executes agent-generated code. It is **off by default**. Only enable it inside the **[Docker sandbox](#-docker)** — don't run it directly on your machine.
 
 ---
 

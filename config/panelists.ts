@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { CouncilConfigSchema } from "../src/core/schemas.ts";
 import type { CouncilConfig, AgentConfig } from "../src/core/schemas.ts";
+import type { PipelineMode } from "../src/core/types.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ export function loadConfig(
   worktreeBase: string,
   runId: string,
   configPath: string = CONFIG_PATH,
+  mode: PipelineMode = "maintenance",
 ): CouncilConfig & { panelists: PanelistConfig[] } {
   const resolvedConfigPath = path.resolve(configPath);
   const raw  = fs.readFileSync(resolvedConfigPath, "utf-8");
@@ -30,11 +32,16 @@ export function loadConfig(
   const council = CouncilConfigSchema.parse(json);
 
   // Prompt files are resolved relative to the config file's own directory, so a
-  // custom --config can ship its own prompts alongside it.
+  // custom --config can ship its own prompts alongside it. In greenfield mode,
+  // a sibling `<dir>/greenfield/<name>.md` variant is used when it exists.
   const configDir = path.dirname(resolvedConfigPath);
   const resolvePrompt = (agent: { systemPrompt?: string; promptFile?: string }): string => {
     if (agent.promptFile) {
-      const filePath = path.resolve(configDir, agent.promptFile);
+      let filePath = path.resolve(configDir, agent.promptFile);
+      if (mode === "greenfield") {
+        const variant = path.join(path.dirname(filePath), "greenfield", path.basename(filePath));
+        if (fs.existsSync(variant)) filePath = variant;
+      }
       return fs.readFileSync(filePath, "utf-8");
     }
     return agent.systemPrompt ?? "";
@@ -52,9 +59,10 @@ export function loadConfig(
 
   return {
     panelists,
-    judge:     { ...council.judge,     systemPrompt: resolvePrompt(council.judge) },
-    validator: { ...council.validator, systemPrompt: resolvePrompt(council.validator) },
-    forge:     council.forge,
+    judge:      { ...council.judge,     systemPrompt: resolvePrompt(council.judge) },
+    validator:  { ...council.validator, systemPrompt: resolvePrompt(council.validator) },
+    forge:      council.forge,
+    evaluation: council.evaluation,
   };
 }
 

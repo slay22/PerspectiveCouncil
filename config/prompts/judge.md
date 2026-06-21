@@ -8,6 +8,9 @@ Rules:
 - Produce ONLY tasks that are actionable by a coding agent
 - Each task must reference which panelist(s) flagged it
 - Do NOT include vague recommendations — only concrete file-level changes
+- If a "PREVIOUS ATTEMPT — VALIDATOR FINDINGS" section is present, your previous plan
+  failed validation. Address those findings FIRST: fix or replace the tasks that were
+  rejected, and do not simply repeat the same plan.
 
 You MUST respond with valid JSON matching this exact schema:
 {

@@ -1,7 +1,9 @@
 import { runCLIJSON } from "../core/cli-runner.ts";
 import { ValidatorReportSchema } from "../core/schemas.ts";
 import { getWorktreeDiff, getChangedFiles } from "../core/diff.ts";
+import { formatEvalForValidator } from "../core/evaluate.ts";
 import { store } from "../server/store.ts";
+import type { EvalResult } from "../core/evaluate.ts";
 import type { JudgePlan, ValidatorReport } from "../core/types.ts";
 import type { AgentConfig } from "../../config/panelists.ts";
 
@@ -9,7 +11,8 @@ export async function runValidator(
   config: AgentConfig,
   worktreePath: string,
   baseBranch: string,
-  plan: JudgePlan
+  plan: JudgePlan,
+  evalResult?: EvalResult
 ): Promise<ValidatorReport> {
   store.log("info", `${config.label} (${config.tool}) collecting diff…`);
 
@@ -45,14 +48,23 @@ export async function runValidator(
     );
   }
 
+  const evalSection = evalResult ? formatEvalForValidator(evalResult) : "";
+
   const report = await runCLIJSON<ValidatorReport>({
     tool:         config.tool,
     model:        config.model,
     systemPrompt: config.systemPrompt,
-    userMessage:  `## Judge's Plan\n${planSummary}\n\n## Files Changed\n${changedFiles.join("\n") || "(none)"}\n\n## Git Diff\n\`\`\`diff\n${diffForPrompt}\n\`\`\`\n\nValidate plan adherence.`,
+    userMessage:  `## Judge's Plan\n${planSummary}\n\n## Files Changed\n${changedFiles.join("\n") || "(none)"}\n\n## Git Diff\n\`\`\`diff\n${diffForPrompt}\n\`\`\`\n${evalSection ? `\n${evalSection}\n` : ""}\nValidate plan adherence.`,
     label:        config.label,
     timeoutMs:    300_000,
   }, ValidatorReportSchema);
+
+  // A run that fails build/test cannot be a PASS, regardless of plan adherence.
+  if (evalResult?.ran && !evalResult.passed && report.verdict === "PASS") {
+    report.verdict = "REJECT";
+    report.notes = `Build/test failed, so this cannot pass. ${report.notes}`;
+    store.log("warn", `${config.label}: overriding PASS → REJECT (build/test failed)`);
+  }
 
   store.setValidatorReport(report);
   store.log(report.verdict === "REJECT" ? "warn" : "info", `${config.label}: ${report.verdict} — ${report.notes}`);

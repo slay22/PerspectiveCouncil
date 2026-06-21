@@ -124,11 +124,27 @@ export const ForgeConfigSchema = z.object({
 });
 export type ForgeConfig = z.infer<typeof ForgeConfigSchema>;
 
+// ─── Evaluation (build/test/run signal) ──────────────────────────────────────
+
+export const EvaluationConfigSchema = z.object({
+  // Off by default. WARNING: when enabled this executes AI-generated code —
+  // run it inside the Docker sandbox.
+  enabled: z.boolean().optional(),
+  install: z.string().optional(),     // e.g. "bun install"
+  build: z.string().optional(),       // e.g. "bun run build"
+  test: z.string().optional(),        // e.g. "bun test"
+  run: z.string().optional(),         // optional smoke command
+  cwd: z.string().optional(),         // working dir relative to the worktree
+  timeoutMs: z.number().int().positive().optional(),  // per-command timeout
+});
+export type EvaluationConfig = z.infer<typeof EvaluationConfigSchema>;
+
 export const CouncilConfigSchema = z.object({
   panelists: z.array(PanelistConfigSchema).min(1, "At least one panelist is required"),
   judge: AgentConfigSchema,
   validator: AgentConfigSchema,
   forge: ForgeConfigSchema.optional(),
+  evaluation: EvaluationConfigSchema.optional(),
 });
 
 export type CouncilConfig = z.infer<typeof CouncilConfigSchema>;

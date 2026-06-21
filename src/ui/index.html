@@ -216,6 +216,18 @@ function normalizeConfig(raw) {
       remote: f.remote ?? "",
       cli: f.cli !== false,
     },
+    evaluation: (() => {
+      const e = raw.evaluation ?? {};
+      return {
+        enabled: e.enabled === true,
+        install: e.install ?? "",
+        build: e.build ?? "",
+        test: e.test ?? "",
+        run: e.run ?? "",
+        cwd: e.cwd ?? "",
+        timeoutMs: e.timeoutMs != null ? String(e.timeoutMs) : "",
+      };
+    })(),
   };
 }
 
@@ -247,6 +259,18 @@ function denormalizeConfig(form) {
       remote: f.remote || undefined,
       cli: f.cli === false ? false : undefined,
     },
+    evaluation: (() => {
+      const e = form.evaluation ?? {};
+      return {
+        enabled: e.enabled === true ? true : undefined,
+        install: e.install || undefined,
+        build: e.build || undefined,
+        test: e.test || undefined,
+        run: e.run || undefined,
+        cwd: e.cwd || undefined,
+        timeoutMs: e.timeoutMs ? Number(e.timeoutMs) : undefined,
+      };
+    })(),
   };
 }
 
@@ -726,6 +750,9 @@ function ConfigEditor({ onDone }) {
   const updateForge = (field, value) =>
     setConfig(prev => ({ ...prev, forge: { ...prev.forge, [field]: value } }));
 
+  const updateEval = (field, value) =>
+    setConfig(prev => ({ ...prev, evaluation: { ...prev.evaluation, [field]: value } }));
+
   const handleSave = () => save(config);
 
   return (
@@ -783,7 +810,41 @@ function ConfigEditor({ onDone }) {
         <ForgeForm forge={config.forge} onChange={updateForge} />
       </Card>
 
+      <Card>
+        <div style={{ fontWeight:700, fontSize:13, color:"var(--text)", marginBottom:4 }}>Evaluation (build / test / run)</div>
+        <div style={{ fontSize:12, color:"var(--muted)", marginBottom:14 }}>
+          Optional. Runs these commands in the implementation worktree to verify the change actually works; a build/test failure blocks PASS.
+          ⚠ Executes agent-generated code — enable only inside the Docker sandbox.
+        </div>
+        <EvalForm evaluation={config.evaluation} onChange={updateEval} />
+      </Card>
+
       <div style={{ height:20 }} />
+    </div>
+  );
+}
+
+function EvalForm({ evaluation, onChange }) {
+  const ev = evaluation ?? {};
+  const enabled = ev.enabled === true;
+  return (
+    <div style={{ background:"var(--bg)", border:"1px solid var(--border)", borderRadius:10, padding:14 }}>
+      <label style={{ display:"flex", alignItems:"center", gap:8, color:"var(--text)", fontSize:13, cursor:"pointer", marginBottom:12 }}>
+        <input type="checkbox" checked={enabled} onChange={e => onChange("enabled", e.target.checked)} />
+        Enable evaluation
+      </label>
+      {enabled && (
+        <>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:12, marginBottom:12 }}>
+            <Field label="Install" value={ev.install} onChange={v => onChange("install", v)} placeholder="bun install" />
+            <Field label="Build" value={ev.build} onChange={v => onChange("build", v)} placeholder="bun run build" />
+            <Field label="Test" value={ev.test} onChange={v => onChange("test", v)} placeholder="bun test" />
+            <Field label="Run (smoke)" value={ev.run} onChange={v => onChange("run", v)} placeholder="(optional)" />
+            <Field label="Working dir" value={ev.cwd} onChange={v => onChange("cwd", v)} placeholder="(repo root)" />
+            <Field label="Per-command timeout (ms)" value={ev.timeoutMs} onChange={v => onChange("timeoutMs", v)} placeholder="300000" />
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -48,6 +48,10 @@ export interface PanelResult {
   riskLevel: "low" | "medium" | "high" | "critical";
 }
 
+// ─── Pipeline Mode ────────────────────────────────────────────────────────────
+
+export type PipelineMode = "maintenance" | "greenfield";
+
 // ─── Pipeline State ───────────────────────────────────────────────────────────
 
 export type PipelineStage =
