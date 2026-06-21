@@ -274,9 +274,11 @@ tests/                    # bun:test suite
 
 ---
 
-## 🗺️ Roadmap
+## 🗺️ Roadmap & design docs
 
-See [`PLAN.md`](./PLAN.md) for the implementation plan and a future optional Rust migration path.
+Planning docs live in [`docs/`](./docs):
+- [`docs/PLAN.md`](./docs/PLAN.md) — the original review fix plan and a future optional Rust migration path.
+- [`docs/loop-engineering-plan.md`](./docs/loop-engineering-plan.md) — the dual-mode (maintenance + greenfield) "loop engineering" plan.
 
 ---
 
