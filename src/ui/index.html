@@ -1031,6 +1031,10 @@ function Header({ state, connected, view, setView }) {
             style={view === "dashboard" ? navBtnActive : navBtn}
           >Dashboard</button>
           <button
+            onClick={() => setView("newrun")}
+            style={view === "newrun" ? navBtnActive : navBtn}
+          >New Run</button>
+          <button
             onClick={() => setView("config")}
             style={view === "config" ? navBtnActive : navBtn}
           >Config</button>
@@ -1060,22 +1064,124 @@ const navBtnActive = {
   background:"var(--accent)20", color:"var(--accent)", border:"1px solid var(--accent)40",
 };
 
+// ─── New Run launcher ───────────────────────────────────────────────────────
+
+function NewRunForm({ onStarted, onBack, runActive }) {
+  const [mode, setMode] = useState("maintenance");
+  const [repoPath, setRepoPath] = useState("");
+  const [branch, setBranch] = useState("main");
+  const [context, setContext] = useState("");
+  const [specPath, setSpecPath] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+
+  const greenfield = mode === "greenfield";
+
+  const submit = async () => {
+    if (!repoPath.trim()) { setError(greenfield ? "Target directory is required" : "Repository path is required"); return; }
+    if (!context.trim()) { setError(greenfield ? "Idea / spec is required" : "Goal is required"); return; }
+    setSubmitting(true); setError(null);
+    try {
+      const res = await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          repoPath: repoPath.trim(),
+          branch: branch.trim() || "main",
+          projectContext: context.trim(),
+          mode,
+          specPath: greenfield && specPath.trim() ? specPath.trim() : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to start run");
+      onStarted?.();
+    } catch (e) { setError(String(e)); }
+    finally { setSubmitting(false); }
+  };
+
+  const modeBtn = (m, label) => (
+    <button onClick={() => setMode(m)} style={mode === m ? navBtnActive : navBtn}>{label}</button>
+  );
+
+  return (
+    <div style={{ flex:1, overflowY:"auto", padding:"24px 28px", display:"flex", justifyContent:"center" }}>
+      <div style={{ width:"100%", maxWidth:640, display:"flex", flexDirection:"column", gap:20 }}>
+        <div>
+          <div style={{ fontWeight:700, fontSize:18, color:"var(--text)", marginBottom:4 }}>Start a run</div>
+          <div style={{ fontSize:12, color:"var(--muted)" }}>Improve an existing repo, or build a new project from an idea.</div>
+        </div>
+
+        {runActive && (
+          <Card style={{ border:"1px solid var(--accent)40", background:"var(--accent)08" }}>
+            <div style={{ color:"var(--accent)", fontSize:13 }}>A run is currently active — starting a new one will be rejected until it finishes.</div>
+          </Card>
+        )}
+        {error && (
+          <Card style={{ border:"1px solid var(--red)40", background:"#ef444408" }}>
+            <div style={{ color:"var(--red)", fontSize:13 }}>⚠ {error}</div>
+          </Card>
+        )}
+
+        <Card>
+          <div style={{ display:"flex", gap:6, marginBottom:16 }}>
+            {modeBtn("maintenance", "🔧 Existing repo")}
+            {modeBtn("greenfield", "🌱 New project")}
+          </div>
+
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            <Field
+              label={greenfield ? "Target directory" : "Repository path"}
+              value={repoPath} onChange={setRepoPath}
+              placeholder={greenfield ? "/path/to/new/project" : "/path/to/repo"}
+            />
+            <Field label="Branch" value={branch} onChange={setBranch} placeholder="main" />
+            <div>
+              <div style={{ fontSize:11, color:"var(--muted)", marginBottom:6 }}>{greenfield ? "Idea / spec" : "Goal / context"}</div>
+              <textarea
+                value={context} onChange={e => setContext(e.target.value)}
+                placeholder={greenfield ? "A Bun CLI that reverses stdin, with tests" : "Harden this API for production; focus on auth"}
+                style={{ ...inputStyle, minHeight:90, resize:"vertical" }}
+              />
+            </div>
+            {greenfield && (
+              <Field label="Spec file path (optional)" value={specPath} onChange={setSpecPath} placeholder="./SPEC.md" />
+            )}
+          </div>
+
+          <div style={{ display:"flex", gap:10, marginTop:18 }}>
+            <button onClick={submit} disabled={submitting} style={primaryBtn}>
+              {submitting ? "Starting…" : greenfield ? "🌱 Build project" : "🔧 Start review"}
+            </button>
+            {onBack && <button onClick={onBack} style={secondaryBtn}>Cancel</button>}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 function App() {
   const { state, connected } = useCouncil();
   const [view, setView] = useState("dashboard");
 
-  if (!state) return (
-    <div style={{ height:"100%", display:"flex", flexDirection:"column",
-      alignItems:"center", justifyContent:"center", gap:16 }}>
-      <Spinner size={32} />
-      <div style={{ color:"var(--muted)", fontSize:13 }}>Waiting for pipeline to start…</div>
-      <div style={{ fontSize:11, color:"var(--muted)", opacity:.5 }}>
-        Run: <code>bun run src/main.ts --repo /your/repo --context "…"</code>
+  const runActive = state && state.currentStage !== "done" && state.currentStage !== "aborted";
+
+  // No run yet, or the user chose "New Run" → show the launcher.
+  if (!state || view === "newrun") {
+    return (
+      <div style={{ height:"100%", display:"flex", flexDirection:"column" }}>
+        {state && <Header state={state} connected={connected} view={view} setView={setView} />}
+        <NewRunForm
+          onStarted={() => setView("dashboard")}
+          onBack={state ? () => setView("dashboard") : undefined}
+          runActive={runActive}
+        />
       </div>
-    </div>
-  );
+    );
+  }
 
   const isAborted = state.currentStage === "aborted";
 

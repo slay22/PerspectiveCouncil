@@ -190,6 +190,32 @@ async function handleMessage(msg: TgMessage): Promise<void> {
       break;
     }
 
+    case "/new": {
+      // /new <target-dir> <branch> <idea...>  → greenfield build
+      if (args.length < 3) {
+        await send(chatId, "Usage: `/new <dir> <branch> <idea>`\n\nExample:\n`/new /projects/reverser main A Bun CLI that reverses stdin`");
+        break;
+      }
+      const active = store.getState();
+      if (active && active.currentStage !== "done" && active.currentStage !== "aborted") {
+        await send(chatId, "⏳ A run is already in progress. Use `/status` to check.");
+        break;
+      }
+      const repoPath = args[0];
+      const branch   = args[1];
+      const projectContext = args.slice(2).join(" ");
+      if (!repoPath || !branch) break;
+      subscribedChats.add(chatId);
+      await send(chatId,
+        `🌱 *Starting greenfield build*\n\n` +
+        `📁 \`${repoPath}\`\n🌿 \`${branch}\`\n💡 ${projectContext}`
+      );
+      pipelineRunner?.({ repoPath, branch, projectContext, mode: "greenfield" }).catch(async (e) => {
+        await send(chatId, `❌ Pipeline error: ${String(e).slice(0, 300)}`);
+      });
+      break;
+    }
+
     case "/status": {
       const state = store.getState();
       if (!state) { await send(chatId, "No pipeline running."); break; }
@@ -407,7 +433,8 @@ function formatHelp(): string {
   return `⚖️ *Perspective Council*
 
 *Start a run:*
-\`/run <repo> <branch> <context>\`
+\`/run <repo> <branch> <context>\` — improve an existing repo
+\`/new <dir> <branch> <idea>\` — build a new project (greenfield)
 
 *During a run:*
 \`/status\` — current stage

@@ -75,6 +75,17 @@ export const HILDecisionSchema = z.enum([
 ]);
 export type HILDecision = z.infer<typeof HILDecisionSchema>;
 
+// ─── Run Request (UI/Telegram launch) ────────────────────────────────────────
+
+export const RunRequestSchema = z.object({
+  repoPath: z.string().min(1, "repoPath is required"),
+  branch: z.string().optional(),
+  projectContext: z.string().min(1, "projectContext is required"),
+  mode: z.enum(["maintenance", "greenfield"]).optional(),
+  specPath: z.string().optional(),
+});
+export type RunRequest = z.infer<typeof RunRequestSchema>;
+
 export const HILResponseSchema = z.object({
   decision: HILDecisionSchema,
   notes: z.string().optional(),

@@ -4,7 +4,7 @@ import * as os from "os";
 import { randomUUID } from "crypto";
 
 import { loadConfig }    from "../config/panelists.ts";
-import { startServer }   from "./server/server.ts";
+import { startServer, registerPipelineRunner } from "./server/server.ts";
 import { store }         from "./server/store.ts";
 import { initTelegramBot, stopPolling } from "./server/telegram.ts";
 import { createWorktrees, removeWorktrees, createImplementorWorktree, removeImplementorWorktree, inferMode, bootstrapGreenfield } from "./core/worktree.ts";
@@ -45,6 +45,7 @@ async function boot(port: number): Promise<void> {
   booted = true;
 
   startServer(port);
+  registerPipelineRunner(runPipeline);
 
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (token) {

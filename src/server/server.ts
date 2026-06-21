@@ -1,13 +1,20 @@
 import { readFileSync } from "fs";
 import * as path from "path";
-import { HILResponseSchema } from "../core/schemas.ts";
+import { HILResponseSchema, RunRequestSchema } from "../core/schemas.ts";
 import { store } from "./store.ts";
 import { handleGetConfig, handlePostConfig } from "./config-api.ts";
 import type { HILResponse } from "../core/types.ts";
+import type { ConductorConfig } from "../main.ts";
 
 const UI_PATH = path.join(import.meta.dir, "../ui/index.html");
 const sockets = new Set<ServerWebSocket<unknown>>();
 type ServerWebSocket<T> = import("bun").ServerWebSocket<T>;
+
+// Injected by main so the UI can launch runs; null until registered.
+let pipelineRunner: ((config: ConductorConfig) => Promise<void>) | null = null;
+export function registerPipelineRunner(fn: (config: ConductorConfig) => Promise<void>): void {
+  pipelineRunner = fn;
+}
 
 // Default to loopback so the server is not reachable from other hosts.
 // Set COUNCIL_HOST=0.0.0.0 to expose it deliberately.
@@ -42,6 +49,11 @@ export function startServer(port = 3000): void {
       if (url.pathname === "/api/hil" && req.method === "POST") {
         if (!authorized(req)) return UNAUTHORIZED();
         return handleHIL(req);
+      }
+
+      if (url.pathname === "/api/run" && req.method === "POST") {
+        if (!authorized(req)) return UNAUTHORIZED();
+        return handleRun(req);
       }
 
       if (url.pathname === "/api/config" && req.method === "GET") {
@@ -102,6 +114,35 @@ async function handleHIL(req: Request): Promise<Response> {
   } catch (e) {
     return json({ error: String(e) }, 400);
   }
+}
+
+async function handleRun(req: Request): Promise<Response> {
+  if (!pipelineRunner) return json({ error: "Run launcher unavailable" }, 503);
+
+  // Reject overlapping runs (the store is a single-run singleton).
+  const active = store.getState();
+  if (active && active.currentStage !== "done" && active.currentStage !== "aborted") {
+    return json({ error: "A run is already in progress" }, 409);
+  }
+
+  let req2;
+  try {
+    req2 = RunRequestSchema.parse(await req.json());
+  } catch (e) {
+    return json({ error: String(e) }, 400);
+  }
+
+  const config: ConductorConfig = {
+    repoPath:       path.resolve(req2.repoPath),
+    branch:         req2.branch || "main",
+    projectContext: req2.projectContext,
+    ...(req2.mode ? { mode: req2.mode } : {}),
+    ...(req2.specPath ? { specPath: path.resolve(req2.specPath) } : {}),
+  };
+
+  // Fire-and-forget: progress streams over the WebSocket.
+  pipelineRunner(config).catch((e) => console.error("[run] pipeline error:", e));
+  return json({ ok: true });
 }
 
 function json(data: unknown, status = 200): Response {

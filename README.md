@@ -82,6 +82,10 @@ bun run src/main.ts \
 bun run src/main.ts --repo ./my-new-app --spec ./SPEC.md --context "My app"
 ```
 
+You can also start either mode without the CLI:
+- **Browser UI** — the **New Run** tab has a mode toggle (Existing repo / New project) and a form.
+- **Telegram** — `/run <repo> <branch> <context>` (maintenance) or `/new <dir> <branch> <idea>` (greenfield).
+
 In greenfield mode, panelist prompts use a `config/prompts/greenfield/*.md` variant when present (falling back to the standard prompt otherwise). Pair greenfield with [evaluation](#-iteration--evaluation) so "done" means *it builds and tests pass*, and run it in the [Docker sandbox](#-docker).
 
 ---

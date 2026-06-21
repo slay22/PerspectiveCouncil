@@ -4,6 +4,7 @@ import {
   ValidatorReportSchema,
   CouncilConfigSchema,
   HILResponseSchema,
+  RunRequestSchema,
 } from "../src/core/schemas.ts";
 
 describe("JudgePlanSchema", () => {
@@ -174,5 +175,20 @@ describe("HILResponseSchema", () => {
       decision: "approve",
     };
     expect(() => HILResponseSchema.parse(response)).toThrow();
+  });
+});
+
+describe("RunRequestSchema", () => {
+  it("accepts a maintenance request", () => {
+    expect(() => RunRequestSchema.parse({ repoPath: "/r", projectContext: "fix it" })).not.toThrow();
+  });
+  it("accepts a greenfield request with mode and spec", () => {
+    expect(() => RunRequestSchema.parse({
+      repoPath: "/new", projectContext: "build it", mode: "greenfield", specPath: "./SPEC.md",
+    })).not.toThrow();
+  });
+  it("rejects a missing context and an invalid mode", () => {
+    expect(() => RunRequestSchema.parse({ repoPath: "/r" })).toThrow();
+    expect(() => RunRequestSchema.parse({ repoPath: "/r", projectContext: "x", mode: "build" })).toThrow();
   });
 });
