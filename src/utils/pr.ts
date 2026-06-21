@@ -1,4 +1,7 @@
 import { $ } from "bun";
+import { store } from "../server/store.ts";
+import { createPullRequest, DEFAULT_FORGE } from "./forge.ts";
+import type { ForgeConfig } from "../core/schemas.ts";
 import type {
   PipelineRun,
   PanelResult,
@@ -12,41 +15,56 @@ import type {
 export async function createPR(
   repoPath: string,
   implWorktreePath: string,
-  run: PipelineRun
+  run: PipelineRun,
+  forge: ForgeConfig = DEFAULT_FORGE
 ): Promise<string> {
   const { panelResults, judgePlan, validatorReport, hilResponse } = run;
   if (!panelResults || !judgePlan || !validatorReport || !hilResponse) {
     throw new Error("Missing pipeline data for PR creation");
   }
 
-  // Push the implementation branch
   const implBranch = await getImplBranch(implWorktreePath);
-  await $`git -C ${implWorktreePath} push origin ${implBranch}`.quiet();
-
   const title = generatePRTitle(judgePlan);
   const body  = generatePRBody(run.id, panelResults, judgePlan, validatorReport, hilResponse);
+  const remote = forge.remote ?? "origin";
 
-  // Use GitHub CLI if available, otherwise print instructions
-  const ghAvailable = await checkGHCLI();
-
-  if (ghAvailable) {
-    const result = await $`gh pr create \
-      --repo ${repoPath} \
-      --base ${run.branch} \
-      --head ${implBranch} \
-      --title ${title} \
-      --body ${body}`.text();
-    return result.trim();
-  } else {
-    // Write PR body to file so user can paste it
-    const bodyPath = `/tmp/council-pr-${run.id}.md`;
-    await Bun.write(bodyPath, body);
-    console.log(`\n📄 PR body written to: ${bodyPath}`);
-    console.log(`\nTo create the PR manually:`);
-    console.log(`  Branch: ${implBranch} → ${run.branch}`);
-    console.log(`  Title: ${title}`);
-    return `manual:${implBranch}`;
+  // Push the implementation branch to the configured remote.
+  const pushed = await $`git -C ${implWorktreePath} push ${remote} ${implBranch}`.nothrow();
+  if (pushed.exitCode !== 0) {
+    store.log("warn", `Could not push ${implBranch} to '${remote}': ${pushed.stderr.toString().trim()}`);
+    return manualFallback(run.id, implBranch, run.branch, title, body, "push failed");
   }
+
+  // Create the PR/MR via the configured forge (CLI if present, else REST API).
+  const result = await createPullRequest({ repoPath, config: forge }, {
+    title, body, head: implBranch, base: run.branch,
+  });
+
+  if (result.url) {
+    store.log("info", `PR/MR created via ${result.via} (${forge.provider}).`);
+    return result.url;
+  }
+
+  store.log("warn", `Automatic PR creation skipped (${forge.provider}): ${result.detail ?? "unknown"}`);
+  return manualFallback(run.id, implBranch, run.branch, title, body, result.detail);
+}
+
+async function manualFallback(
+  runId: string,
+  implBranch: string,
+  baseBranch: string,
+  title: string,
+  body: string,
+  reason?: string
+): Promise<string> {
+  const bodyPath = `/tmp/council-pr-${runId}.md`;
+  await Bun.write(bodyPath, body);
+  console.log(`\n📄 PR body written to: ${bodyPath}`);
+  if (reason) console.log(`   (automatic creation unavailable: ${reason})`);
+  console.log(`\nTo create the PR/MR manually:`);
+  console.log(`  Branch: ${implBranch} → ${baseBranch}`);
+  console.log(`  Title:  ${title}`);
+  return `manual:${implBranch}`;
 }
 
 // ─── PR Content ───────────────────────────────────────────────────────────────
@@ -134,13 +152,4 @@ ${hilNotesSection}
 async function getImplBranch(worktreePath: string): Promise<string> {
   const result = await $`git -C ${worktreePath} branch --show-current`.text();
   return result.trim();
-}
-
-async function checkGHCLI(): Promise<boolean> {
-  try {
-    await $`gh --version`.quiet();
-    return true;
-  } catch {
-    return false;
-  }
 }

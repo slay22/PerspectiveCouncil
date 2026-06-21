@@ -54,6 +54,7 @@ export function loadConfig(
     panelists,
     judge:     { ...council.judge,     systemPrompt: resolvePrompt(council.judge) },
     validator: { ...council.validator, systemPrompt: resolvePrompt(council.validator) },
+    forge:     council.forge,
   };
 }
 

@@ -82,7 +82,7 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
       throw e;
     }
 
-    const { panelists, judge, validator } = council;
+    const { panelists, judge, validator, forge } = council;
 
     store.init({
       runId,
@@ -205,7 +205,7 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
         judgePlan:       run.judgePlan,
         validatorReport: run.validatorReport,
         hilResponse:     run.hilResponse,
-      });
+      }, forge);
       store.setPRUrl(prUrl);
       store.setDone();
       store.log("info", `PR created: ${prUrl}`);

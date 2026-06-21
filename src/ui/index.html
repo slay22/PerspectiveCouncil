@@ -203,10 +203,19 @@ function normalizeConfig(raw) {
       systemPrompt: agent.systemPrompt ?? "",
     };
   };
+  const f = raw.forge ?? {};
   return {
     panelists: (raw.panelists ?? []).map(toForm),
     judge: toForm(raw.judge ?? {}),
     validator: toForm(raw.validator ?? {}),
+    forge: {
+      provider: f.provider ?? "github",
+      repo: f.repo ?? "",
+      baseUrl: f.baseUrl ?? "",
+      tokenEnv: f.tokenEnv ?? "",
+      remote: f.remote ?? "",
+      cli: f.cli !== false,
+    },
   };
 }
 
@@ -225,10 +234,19 @@ function denormalizeConfig(form) {
     }
     return raw;
   };
+  const f = form.forge ?? {};
   return {
     panelists: form.panelists.map((p) => ({ id: p.id, ...toRaw(p) })),
     judge: toRaw(form.judge),
     validator: toRaw(form.validator),
+    forge: {
+      provider: f.provider || "github",
+      repo: f.repo || undefined,
+      baseUrl: f.baseUrl || undefined,
+      tokenEnv: f.tokenEnv || undefined,
+      remote: f.remote || undefined,
+      cli: f.cli === false ? false : undefined,
+    },
   };
 }
 
@@ -705,6 +723,9 @@ function ConfigEditor({ onDone }) {
     }));
   };
 
+  const updateForge = (field, value) =>
+    setConfig(prev => ({ ...prev, forge: { ...prev.forge, [field]: value } }));
+
   const handleSave = () => save(config);
 
   return (
@@ -754,7 +775,61 @@ function ConfigEditor({ onDone }) {
         <AgentForm agent={config.validator} onChange={(field, value) => updateAgent("validator", 0, field, value)} />
       </Card>
 
+      <Card>
+        <div style={{ fontWeight:700, fontSize:13, color:"var(--text)", marginBottom:4 }}>Pull Request / Merge Request</div>
+        <div style={{ fontSize:12, color:"var(--muted)", marginBottom:14 }}>
+          Where to open the PR/MR. Uses the platform CLI if installed, else the REST API with a token from the env var below.
+        </div>
+        <ForgeForm forge={config.forge} onChange={updateForge} />
+      </Card>
+
       <div style={{ height:20 }} />
+    </div>
+  );
+}
+
+const FORGE_PROVIDERS = ["github", "gitlab", "gitea", "azure", "manual"];
+const FORGE_TOKEN_HINT = {
+  github: "GITHUB_TOKEN", gitlab: "GITLAB_TOKEN", gitea: "GITEA_TOKEN",
+  azure: "AZURE_DEVOPS_EXT_PAT", manual: "—",
+};
+const FORGE_REPO_HINT = {
+  github: "owner/name", gitlab: "group/project", gitea: "owner/name",
+  azure: "org/project/repository", manual: "—",
+};
+
+function ForgeForm({ forge, onChange }) {
+  const provider = forge.provider ?? "github";
+  const isManual = provider === "manual";
+  return (
+    <div style={{ background:"var(--bg)", border:"1px solid var(--border)", borderRadius:10, padding:14 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:12, marginBottom:12 }}>
+        <div>
+          <div style={{ fontSize:11, color:"var(--muted)", marginBottom:6 }}>Provider</div>
+          <select value={provider} onChange={e => onChange("provider", e.target.value)} style={inputStyle}>
+            {FORGE_PROVIDERS.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+        <Field label={`Repo (${FORGE_REPO_HINT[provider]})`} value={forge.repo} onChange={v => onChange("repo", v)} placeholder={isManual ? "" : FORGE_REPO_HINT[provider]} />
+        <Field label="Git remote" value={forge.remote} onChange={v => onChange("remote", v)} placeholder="origin" />
+      </div>
+      {!isManual && (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:12, marginBottom:12 }}>
+          <Field label="Base URL (self-hosted)" value={forge.baseUrl} onChange={v => onChange("baseUrl", v)} placeholder="auto" />
+          <Field label="Token env var" value={forge.tokenEnv} onChange={v => onChange("tokenEnv", v)} placeholder={FORGE_TOKEN_HINT[provider]} />
+        </div>
+      )}
+      {!isManual && (
+        <label style={{ display:"flex", alignItems:"center", gap:8, color:"var(--text)", fontSize:13, cursor:"pointer" }}>
+          <input type="checkbox" checked={forge.cli !== false} onChange={e => onChange("cli", e.target.checked)} />
+          Use the platform CLI when available (falls back to REST API)
+        </label>
+      )}
+      {isManual && (
+        <div style={{ fontSize:12, color:"var(--muted)" }}>
+          The branch is pushed and the PR body is written to a file with manual instructions — no PR is opened automatically.
+        </div>
+      )}
     </div>
   );
 }

@@ -103,10 +103,32 @@ export const PanelistConfigSchema = AgentConfigSchema.extend({
   id: z.string().min(1),
 });
 
+// ─── Forge (PR/MR hosting) ──────────────────────────────────────────────────
+
+export const ForgeProviderSchema = z.enum(["github", "gitlab", "gitea", "azure", "manual"]);
+export type ForgeProvider = z.infer<typeof ForgeProviderSchema>;
+
+export const ForgeConfigSchema = z.object({
+  provider: ForgeProviderSchema,
+  // API/web base, e.g. "https://gitlab.example.com". Defaults per provider.
+  baseUrl: z.string().optional(),
+  // Repo slug: "owner/name" (github/gitea), "group/sub/project" (gitlab),
+  // "org/project/repository" (azure). Inferred from the git remote if omitted.
+  repo: z.string().optional(),
+  // Env var holding the API token. Defaults per provider (e.g. GITHUB_TOKEN).
+  tokenEnv: z.string().optional(),
+  // Git remote to push the implementation branch to (default "origin").
+  remote: z.string().optional(),
+  // Allow using the platform CLI (gh/glab/tea/az) when present (default true).
+  cli: z.boolean().optional(),
+});
+export type ForgeConfig = z.infer<typeof ForgeConfigSchema>;
+
 export const CouncilConfigSchema = z.object({
   panelists: z.array(PanelistConfigSchema).min(1, "At least one panelist is required"),
   judge: AgentConfigSchema,
   validator: AgentConfigSchema,
+  forge: ForgeConfigSchema.optional(),
 });
 
 export type CouncilConfig = z.infer<typeof CouncilConfigSchema>;

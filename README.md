@@ -87,7 +87,7 @@ Notes:
 
 - [Bun](https://bun.sh) v1.1+
 - [Claude Code CLI](https://docs.anthropic.com/claude-code) installed and authenticated
-- [GitHub CLI](https://cli.github.com) (`gh`) — optional, for automatic PR creation
+- A forge CLI **or** API token for automatic PR/MR creation — optional (see [Pull requests](#-pull-requests--merge-requests))
 - Git 2.5+ (for worktree support)
 - API keys for the providers you configure (Anthropic, OpenAI, Moonshot, etc.)
 
@@ -123,6 +123,40 @@ Agents are configured in `config/panelists.json`. Each agent has:
 ```
 
 Edit the Markdown prompts in `config/prompts/` and re-run — changes take effect immediately without restarting the server.
+
+---
+
+## 🔀 Pull requests / merge requests
+
+The forge is configurable — GitHub, GitLab, Codeberg/Forgejo/Gitea, Azure DevOps, or `manual`. For each run the council pushes the implementation branch and then opens the PR/MR using the **platform CLI if it's installed** (`gh`/`glab`/`tea`/`az`), otherwise the **REST API** with a token. If neither is available (or `provider: "manual"`), it pushes the branch and writes the PR body to a file with manual instructions.
+
+Configure it under a `forge` block in `config/panelists.json` (or the **Config** tab):
+
+```json
+{
+  "panelists": [ /* … */ ],
+  "judge": { /* … */ },
+  "validator": { /* … */ },
+  "forge": {
+    "provider": "gitlab",
+    "repo": "group/project",        // inferred from the git remote if omitted
+    "baseUrl": "https://gitlab.example.com",  // optional; for self-hosted
+    "tokenEnv": "GITLAB_TOKEN",     // optional; sensible default per provider
+    "remote": "origin",             // optional
+    "cli": true                     // optional; set false to force the API
+  }
+}
+```
+
+| Provider | `repo` format | CLI | Default token env |
+|----------|---------------|-----|-------------------|
+| `github` | `owner/name` | `gh` | `GITHUB_TOKEN` / `GH_TOKEN` |
+| `gitlab` | `group/project` | `glab` | `GITLAB_TOKEN` |
+| `gitea` (Codeberg/Forgejo) | `owner/name` | `tea` | `GITEA_TOKEN` / `FORGEJO_TOKEN` |
+| `azure` | `org/project/repository` | `az` | `AZURE_DEVOPS_EXT_PAT` |
+| `manual` | — | — | — |
+
+Tokens are referenced by **env-var name** only — never stored in `panelists.json`.
 
 ---
 

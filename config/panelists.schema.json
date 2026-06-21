@@ -17,9 +17,44 @@
     "validator": {
       "$ref": "#/definitions/agent",
       "description": "Checks whether the implementation matches the plan"
+    },
+    "forge": {
+      "$ref": "#/definitions/forge",
+      "description": "Where to open the PR/MR (GitHub, GitLab, Gitea/Codeberg, Azure DevOps, or manual)"
     }
   },
   "definitions": {
+    "forge": {
+      "type": "object",
+      "required": ["provider"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["github", "gitlab", "gitea", "azure", "manual"],
+          "description": "Forge to open the PR/MR on"
+        },
+        "baseUrl": {
+          "type": "string",
+          "description": "API/web base for self-hosted instances. Defaults per provider."
+        },
+        "repo": {
+          "type": "string",
+          "description": "owner/name (github/gitea), group/project (gitlab), org/project/repository (azure). Inferred from the git remote if omitted."
+        },
+        "tokenEnv": {
+          "type": "string",
+          "description": "Env var holding the API token. Defaults per provider (e.g. GITHUB_TOKEN)."
+        },
+        "remote": {
+          "type": "string",
+          "description": "Git remote to push the implementation branch to (default: origin)."
+        },
+        "cli": {
+          "type": "boolean",
+          "description": "Use the platform CLI (gh/glab/tea/az) when available (default: true)."
+        }
+      }
+    },
     "agent": {
       "type": "object",
       "required": ["tool", "label"],
