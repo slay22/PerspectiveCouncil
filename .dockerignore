@@ -1,0 +1,9 @@
+node_modules
+.git
+.env
+*.log
+graphify-out
+tests
+PLAN.md
+.github
+.DS_Store

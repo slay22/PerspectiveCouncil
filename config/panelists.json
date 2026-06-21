@@ -1,0 +1,43 @@
+{
+  "$schema": "./panelists.schema.json",
+  "panelists": [
+    {
+      "id": "security",
+      "label": "Security Architect",
+      "icon": "🔐",
+      "tool": "claude",
+      "model": "claude-opus-4-5",
+      "promptFile": "./prompts/security.md"
+    },
+    {
+      "id": "quality",
+      "label": "Code Quality Analyst",
+      "icon": "📊",
+      "tool": "opencode",
+      "model": "anthropic/claude-sonnet-4-5",
+      "promptFile": "./prompts/quality.md"
+    },
+    {
+      "id": "systems",
+      "label": "Systems Designer",
+      "icon": "🏗️",
+      "tool": "pi",
+      "model": "moonshot/kimi",
+      "promptFile": "./prompts/systems.md"
+    }
+  ],
+  "judge": {
+    "tool": "pi",
+    "model": "moonshot/kimi",
+    "label": "Judge",
+    "icon": "⚖️",
+    "promptFile": "./prompts/judge.md"
+  },
+  "validator": {
+    "tool": "claude",
+    "model": "claude-haiku-4-5-20251001",
+    "label": "Validator",
+    "icon": "✅",
+    "promptFile": "./prompts/validator.md"
+  }
+}

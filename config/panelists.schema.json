@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Perspective Council Config",
+  "type": "object",
+  "required": ["panelists", "judge", "validator"],
+  "properties": {
+    "panelists": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Panelist agents that analyze the codebase in parallel",
+      "items": { "$ref": "#/definitions/agent" }
+    },
+    "judge": {
+      "$ref": "#/definitions/agent",
+      "description": "Synthesizes panel results into a structured implementation plan"
+    },
+    "validator": {
+      "$ref": "#/definitions/agent",
+      "description": "Checks whether the implementation matches the plan"
+    }
+  },
+  "definitions": {
+    "agent": {
+      "type": "object",
+      "required": ["tool", "label"],
+      "oneOf": [
+        { "required": ["systemPrompt"] },
+        { "required": ["promptFile"] }
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier (panelists only)"
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable name shown in GUI and Telegram"
+        },
+        "icon": {
+          "type": "string",
+          "description": "Emoji shown in GUI"
+        },
+        "tool": {
+          "type": "string",
+          "enum": ["claude", "opencode", "pi"],
+          "description": "Which CLI to spawn. Multiple agents can share the same tool with different models."
+        },
+        "model": {
+          "type": "string",
+          "description": "Model to pass to the CLI.\n  claude:   claude-opus-4-5 | claude-sonnet-4-5 | claude-haiku-4-5-20251001 | ...\n  opencode: anthropic/claude-opus-4-5 | openai/gpt-4o | google/gemini-2-flash | ...\n  pi:       moonshot/kimi | anthropic/claude-opus-4-5 | openai/gpt-4o | ...\nOmit to use each tool's currently configured default model."
+        },
+        "systemPrompt": {
+          "type": "string",
+          "description": "System prompt injected before the user message"
+        },
+        "promptFile": {
+          "type": "string",
+          "description": "Path to a Markdown file containing the system prompt. Resolved relative to panelists.json. Either systemPrompt or promptFile is required."
+        }
+      }
+    }
+  }
+}

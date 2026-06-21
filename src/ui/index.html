@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Perspective Council</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:       #09090f;
+    --surface:  #0f0f1a;
+    --border:   #1e1e30;
+    --text:     #e2e2f0;
+    --muted:    #5a5a7a;
+    --accent:   #6366f1;
+    --purple:   #a855f7;
+    --red:      #ef4444;
+    --yellow:   #f59e0b;
+    --green:    #22c55e;
+    --teal:     #2dd4bf;
+    --orange:   #f97316;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--text);
+    font-family: 'Inter', system-ui, sans-serif; font-size: 14px; }
+  #root { height: 100%; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  @keyframes slideIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+  @keyframes glow { 0%,100%{box-shadow:0 0 8px #6366f140} 50%{box-shadow:0 0 20px #6366f180} }
+
+  .spin { animation: spin 1s linear infinite; }
+  .pulse { animation: pulse 1.8s ease-in-out infinite; }
+  .slide-in { animation: slideIn .25s ease-out both; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const STAGE_ORDER = ["init","worktrees","panel","judge","implement","validate","hil","pr","done","aborted"];
+const STAGE_LABEL = {
+  init:"Initialising", worktrees:"Worktrees", panel:"Panel Analysis",
+  judge:"Judge", implement:"Implementation", validate:"Validator",
+  hil:"Human Review", pr:"Pull Request", done:"Complete", aborted:"Aborted"
+};
+const RISK_COLOR = { critical:"#ef4444", high:"#f59e0b", medium:"#6366f1", low:"#5a5a7a" };
+const PRIORITY_COLOR = { P0:"#ef4444", P1:"#f59e0b", P2:"#5a5a7a" };
+const VERDICT_COLOR = { PASS:"#22c55e", PARTIAL:"#f59e0b", REJECT:"#ef4444" };
+
+// Auth header for config/HIL endpoints. The server injects the token (empty
+// string when auth is disabled) into window.__COUNCIL_API_TOKEN__.
+function authHeaders() {
+  const t = window.__COUNCIL_API_TOKEN__;
+  return t ? { Authorization: "Bearer " + t } : {};
+}
+
+// ─── WebSocket Hook ───────────────────────────────────────────────────────────
+function useCouncil() {
+  const [state, setState] = useState(null);
+  const [connected, setConnected] = useState(false);
+  const wsRef = useRef(null);
+
+  const applyEvent = useCallback((event, prev) => {
+    if (!prev) return prev;
+    const s = structuredClone(prev);
+    switch (event.type) {
+      case "stage_changed":
+        s.currentStage = event.payload.stage; break;
+      case "panelist_started":
+        { const p = s.panelists.find(p => p.id === event.payload.id);
+          if (p) p.status = "running"; break; }
+      case "panelist_done":
+        { const p = s.panelists.find(p => p.id === event.payload.id);
+          if (p) { p.status = event.payload.error ? "error" : "done";
+                   if (event.payload.result) p.result = event.payload.result; } break; }
+      case "judge_done":
+        s.judgePlan = event.payload.plan;
+        s.tasks = event.payload.plan.tasks.map(t => ({ ...t, status: "pending" })); break;
+      case "task_started":
+        { const t = s.tasks?.find(t => t.id === event.payload.taskId);
+          if (t) t.status = "running"; break; }
+      case "task_done":
+        { const t = s.tasks?.find(t => t.id === event.payload.taskId);
+          if (t) t.status = "done"; break; }
+      case "task_failed":
+        { const t = s.tasks?.find(t => t.id === event.payload.taskId);
+          if (t) t.status = "failed"; break; }
+      case "validator_done":
+        s.validatorReport = event.payload.report; break;
+      case "hil_pending":
+        s.hilPending = true; break;
+      case "hil_received":
+        s.hilPending = false; s.hilResponse = event.payload.response; break;
+      case "pr_created":
+        s.prUrl = event.payload.url; break;
+      case "pipeline_done":
+        s.currentStage = "done"; break;
+      case "pipeline_error":
+        s.currentStage = "aborted"; s.error = event.payload.error; break;
+      case "log":
+        if (!s.logs) s.logs = [];
+        s.logs.push(event.payload);
+        if (s.logs.length > 200) s.logs = s.logs.slice(-200);
+        break;
+    }
+    return s;
+  }, []);
+
+  useEffect(() => {
+    // Load full state first (handles refresh)
+    fetch("/api/state").then(r => r.json()).then(data => {
+      if (!data.error) setState(data);
+    }).catch(() => {});
+
+    const connect = () => {
+      const ws = new WebSocket(`ws://${location.host}/ws`);
+      wsRef.current = ws;
+      ws.onopen = () => setConnected(true);
+      ws.onclose = () => { setConnected(false); setTimeout(connect, 2000); };
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === "state_snapshot") {
+          setState(msg.payload);
+        } else {
+          setState(prev => applyEvent(msg, prev));
+        }
+      };
+    };
+    connect();
+    return () => wsRef.current?.close();
+  }, [applyEvent]);
+
+  return { state, connected };
+}
+
+// ─── Config Hook ──────────────────────────────────────────────────────────────
+
+function useConfig() {
+  const [config, setConfig] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [saved, setSaved] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/config", { headers: authHeaders() });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to load config");
+      setConfig(normalizeConfig(data));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const save = useCallback(async (nextConfig) => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const payload = denormalizeConfig(nextConfig);
+      const res = await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to save config");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  return { config, setConfig, loading, saving, error, saved, load, save };
+}
+
+function normalizeConfig(raw) {
+  const toForm = (agent) => {
+    const mode = agent.promptFile ? "file" : "inline";
+    return {
+      ...agent,
+      promptMode: mode,
+      promptFile: agent.promptFile ?? "",
+      systemPrompt: agent.systemPrompt ?? "",
+    };
+  };
+  return {
+    panelists: (raw.panelists ?? []).map(toForm),
+    judge: toForm(raw.judge ?? {}),
+    validator: toForm(raw.validator ?? {}),
+  };
+}
+
+function denormalizeConfig(form) {
+  const toRaw = (agent) => {
+    const raw = {
+      tool: agent.tool,
+      label: agent.label,
+      icon: agent.icon,
+      model: agent.model || undefined,
+    };
+    if (agent.promptMode === "file") {
+      raw.promptFile = agent.promptFile || undefined;
+    } else {
+      raw.systemPrompt = agent.systemPrompt || undefined;
+    }
+    return raw;
+  };
+  return {
+    panelists: form.panelists.map((p) => ({ id: p.id, ...toRaw(p) })),
+    judge: toRaw(form.judge),
+    validator: toRaw(form.validator),
+  };
+}
+
+// ─── Components ───────────────────────────────────────────────────────────────
+
+function Badge({ color, children, small }) {
+  return <span style={{
+    display:"inline-block", padding: small ? "1px 6px" : "2px 8px",
+    borderRadius:4, fontSize: small ? 10 : 11, fontWeight:700,
+    background: color + "20", color, border: `1px solid ${color}40`,
+    letterSpacing:"0.04em", textTransform:"uppercase",
+  }}>{children}</span>;
+}
+
+function Card({ children, style, glow }) {
+  return <div style={{
+    background:"var(--surface)", border:"1px solid var(--border)",
+    borderRadius:12, padding:"18px 20px",
+    animation: glow ? "glow 2s ease-in-out infinite" : undefined,
+    ...style
+  }}>{children}</div>;
+}
+
+function Spinner({ size=16, color="var(--accent)" }) {
+  return <div className="spin" style={{
+    width:size, height:size, borderRadius:"50%",
+    border:`2px solid ${color}30`, borderTopColor:color,
+  }} />;
+}
+
+// ─── Stage Pipeline Bar ───────────────────────────────────────────────────────
+
+function StagePipeline({ currentStage }) {
+  const stages = STAGE_ORDER.filter(s => s !== "aborted");
+  const currentIdx = stages.indexOf(currentStage);
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:0, overflow:"hidden" }}>
+      {stages.map((s, i) => {
+        const done = i < currentIdx;
+        const active = i === currentIdx;
+        const future = i > currentIdx;
+        return (
+          <React.Fragment key={s}>
+            <div style={{
+              display:"flex", flexDirection:"column", alignItems:"center", gap:4,
+              opacity: future ? 0.3 : 1,
+              transition:"opacity .3s",
+            }}>
+              <div style={{
+                width:28, height:28, borderRadius:"50%", display:"flex",
+                alignItems:"center", justifyContent:"center", fontSize:12,
+                background: done ? "var(--green)" : active ? "var(--accent)" : "var(--border)",
+                color: done||active ? "#fff" : "var(--muted)",
+                boxShadow: active ? "0 0 12px var(--accent)80" : "none",
+                transition:"all .3s",
+              }}>
+                {done ? "✓" : active ? <Spinner size={12} color="#fff" /> : i+1}
+              </div>
+              <span style={{
+                fontSize:10, color: active ? "var(--accent)" : done ? "var(--green)" : "var(--muted)",
+                fontWeight: active ? 700 : 400, whiteSpace:"nowrap",
+              }}>{STAGE_LABEL[s]}</span>
+            </div>
+            {i < stages.length - 1 && (
+              <div style={{
+                flex:1, height:1, minWidth:8,
+                background: i < currentIdx ? "var(--green)" : "var(--border)",
+                marginBottom:18, transition:"background .3s",
+              }} />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Panelist Cards ───────────────────────────────────────────────────────────
+
+function PanelistCard({ panelist }) {
+  const [expanded, setExpanded] = useState(false);
+  const statusColor = { pending:"var(--muted)", running:"var(--accent)", done:"var(--green)", error:"var(--red)" };
+  const c = statusColor[panelist.status];
+  const riskColor = panelist.result ? RISK_COLOR[panelist.result.riskLevel] : "var(--muted)";
+
+  return (
+    <Card style={{ position:"relative", overflow:"hidden" }} glow={panelist.status==="running"}>
+      <div style={{ position:"absolute", top:0, left:0, right:0, height:3, background:c, transition:"background .3s" }} />
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <span style={{ fontSize:20 }}>{panelist.icon}</span>
+          <div>
+            <div style={{ fontWeight:700, fontSize:13, color:"var(--text)" }}>{panelist.label}</div>
+            <div style={{ fontSize:11, color:"var(--muted)" }}>{panelist.model}</div>
+          </div>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          {panelist.result && <Badge color={riskColor} small>{panelist.result.riskLevel}</Badge>}
+          {panelist.status === "running" && <Spinner size={14} color="var(--accent)" />}
+          {panelist.status === "done" && <span style={{ color:"var(--green)", fontSize:16 }}>✓</span>}
+          {panelist.status === "error" && <span style={{ color:"var(--red)", fontSize:16 }}>✗</span>}
+        </div>
+      </div>
+
+      {panelist.status === "pending" && (
+        <div style={{ color:"var(--muted)", fontSize:12 }} className="pulse">Waiting…</div>
+      )}
+      {panelist.status === "running" && (
+        <div style={{ color:"var(--muted)", fontSize:12 }} className="pulse">Analyzing codebase…</div>
+      )}
+      {panelist.result && (
+        <>
+          <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom:8 }}>
+            {panelist.result.keyFindings.slice(0,3).map((f,i) => (
+              <div key={i} style={{ fontSize:12, color:"var(--muted)", display:"flex", gap:6 }}>
+                <span style={{ color:riskColor, flexShrink:0 }}>›</span>
+                <span>{f.slice(0,90)}{f.length>90?"…":""}</span>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => setExpanded(!expanded)} style={{
+            background:"none", border:"1px solid var(--border)", borderRadius:6,
+            color:"var(--muted)", fontSize:11, padding:"3px 10px", cursor:"pointer",
+            marginTop:4,
+          }}>{expanded ? "▲ Less" : "▼ Full analysis"}</button>
+          {expanded && (
+            <div className="slide-in" style={{
+              marginTop:12, fontSize:12, color:"var(--muted)", lineHeight:1.7,
+              whiteSpace:"pre-wrap", maxHeight:300, overflowY:"auto",
+              background:"var(--bg)", padding:12, borderRadius:8,
+            }}>{panelist.result.analysis}</div>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+// ─── Task List ────────────────────────────────────────────────────────────────
+
+function TaskList({ tasks, plan }) {
+  if (!tasks?.length) return null;
+  const counts = { P0:0, P1:0, P2:0 };
+  tasks.forEach(t => counts[t.priority]++);
+
+  return (
+    <Card>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <span style={{ fontSize:18 }}>📐</span>
+          <span style={{ fontWeight:700, color:"var(--text)" }}>Implementation Plan</span>
+        </div>
+        <div style={{ display:"flex", gap:6 }}>
+          {Object.entries(counts).map(([p,n]) => n > 0 && (
+            <Badge key={p} color={PRIORITY_COLOR[p]} small>{p}: {n}</Badge>
+          ))}
+        </div>
+      </div>
+      {plan?.summary && (
+        <div style={{ fontSize:12.5, color:"var(--muted)", marginBottom:12, lineHeight:1.6 }}>
+          {plan.summary}
+        </div>
+      )}
+      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+        {tasks.map(task => <TaskRow key={task.id} task={task} />)}
+      </div>
+      {plan?.riskFlags?.length > 0 && (
+        <div style={{ marginTop:12, padding:"10px 14px", background:"#ef444410", borderRadius:8, border:"1px solid #ef444430" }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"var(--red)", marginBottom:6 }}>🚨 RISK FLAGS</div>
+          {plan.riskFlags.map((f,i) => (
+            <div key={i} style={{ fontSize:12, color:"#ef444499" }}>⚠ {f}</div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function TaskRow({ task }) {
+  const statusIcon = { pending:"○", running:"◉", done:"✓", failed:"✗" }[task.status];
+  const statusColor = { pending:"var(--muted)", running:"var(--accent)", done:"var(--green)", failed:"var(--red)" }[task.status];
+  const [exp, setExp] = useState(false);
+
+  return (
+    <div style={{
+      padding:"8px 12px", borderRadius:8, background:"var(--bg)",
+      border:`1px solid ${task.status==="running" ? "var(--accent)40" : "var(--border)"}`,
+      transition:"border-color .3s",
+    }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        <span style={{ color:statusColor, fontSize:14, minWidth:14 }}>
+          {task.status==="running" ? <Spinner size={12} color="var(--accent)" /> : statusIcon}
+        </span>
+        <Badge color={PRIORITY_COLOR[task.priority]} small>{task.priority}</Badge>
+        <span style={{ fontSize:11, color:"var(--muted)", fontFamily:"monospace" }}>{task.id}</span>
+        <span style={{ fontSize:11, color:"var(--accent)", fontFamily:"monospace" }}>{task.action}</span>
+        <span style={{ fontSize:11, color:"var(--text)", fontFamily:"monospace", flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{task.file}</span>
+        <button onClick={() => setExp(!exp)} style={{
+          background:"none", border:"none", color:"var(--muted)", cursor:"pointer", fontSize:10, padding:"0 4px",
+        }}>{exp?"▲":"▼"}</button>
+      </div>
+      {exp && (
+        <div className="slide-in" style={{ marginTop:8, paddingLeft:22, fontSize:12, color:"var(--muted)", lineHeight:1.6 }}>
+          <div style={{ marginBottom:4 }}><strong style={{ color:"var(--text)" }}>Instruction:</strong> {task.instruction}</div>
+          <div><strong style={{ color:"var(--text)" }}>Rationale:</strong> {task.rationale}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Validator Report ─────────────────────────────────────────────────────────
+
+function ValidatorPanel({ report }) {
+  if (!report) return null;
+  const color = VERDICT_COLOR[report.verdict];
+  return (
+    <Card>
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+        <span style={{ fontSize:18 }}>✅</span>
+        <span style={{ fontWeight:700, color:"var(--text)" }}>Validator</span>
+        <Badge color={color}>{report.verdict}</Badge>
+      </div>
+      <div style={{ fontSize:12.5, color:"var(--muted)", marginBottom:10 }}>{report.notes}</div>
+      {report.outOfScopeChanges?.length > 0 && (
+        <div style={{ marginBottom:8 }}>
+          {report.outOfScopeChanges.map((c,i) => (
+            <div key={i} style={{ fontSize:12, color:"var(--yellow)" }}>⚠ {c}</div>
+          ))}
+        </div>
+      )}
+      <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+        {report.taskResults?.map(r => (
+          <div key={r.taskId} style={{ display:"flex", alignItems:"center", gap:8, fontSize:12 }}>
+            <span style={{ color: VERDICT_COLOR[r.verdict] }}>
+              {r.verdict==="PASS"?"✓":r.verdict==="PARTIAL"?"~":"✗"}
+            </span>
+            <span style={{ color:"var(--muted)", fontFamily:"monospace" }}>{r.taskId}</span>
+            <span style={{ color:"var(--muted)" }}>{r.notes}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// ─── HIL Panel ────────────────────────────────────────────────────────────────
+
+function HILPanel({ state }) {
+  const [decision, setDecision] = useState("approve");
+  const [notes, setNotes] = useState("");
+  const [planNotes, setPlanNotes] = useState("");
+  const [implNotes, setImplNotes] = useState("");
+  const [reviewer, setReviewer] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  if (!state.hilPending) return null;
+
+  const submit = async () => {
+    if (!reviewer.trim()) { alert("Please enter your name"); return; }
+    setSubmitting(true);
+    try {
+      await fetch("/api/hil", {
+        method:"POST",
+        headers:{"Content-Type":"application/json", ...authHeaders()},
+        body: JSON.stringify({
+          decision,
+          notes: notes || undefined,
+          revisePlanInstructions: planNotes || undefined,
+          reviseImplInstructions: implNotes || undefined,
+          reviewer: reviewer.trim(),
+        }),
+      });
+      setSubmitted(true);
+    } catch (e) {
+      alert("Failed to submit: " + e);
+    }
+    setSubmitting(false);
+  };
+
+  if (submitted) return (
+    <Card style={{ border:"1px solid var(--green)40", background:"#22c55e08" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:10, color:"var(--green)" }}>
+        <span style={{ fontSize:20 }}>✓</span>
+        <span style={{ fontWeight:700 }}>Review submitted — pipeline resuming…</span>
+      </div>
+    </Card>
+  );
+
+  const decisions = [
+    { value:"approve",             label:"✓ Approve",                  color:"var(--green)",  desc:"Create PR as-is" },
+    { value:"approve_with_notes",  label:"✎ Approve with notes",       color:"var(--teal)",   desc:"Add notes to PR description" },
+    { value:"revise_plan",         label:"⟳ Revise plan",              color:"var(--yellow)", desc:"Send back to judge with your instructions" },
+    { value:"revise_implementation",label:"⟳ Revise implementation",   color:"var(--yellow)", desc:"Send back to Claude Code" },
+    { value:"abort",               label:"✗ Abort",                    color:"var(--red)",    desc:"Discard all changes" },
+  ];
+
+  return (
+    <Card style={{ border:"1px solid var(--accent)50", animation:"glow 2s ease-in-out infinite" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:18 }}>
+        <div style={{
+          width:36, height:36, borderRadius:8, display:"flex", alignItems:"center",
+          justifyContent:"center", fontSize:18,
+          background:"linear-gradient(135deg, var(--accent), var(--purple))",
+        }}>👤</div>
+        <div>
+          <div style={{ fontWeight:700, fontSize:15, color:"var(--text)" }}>Human Review Required</div>
+          <div style={{ fontSize:12, color:"var(--muted)" }}>Your decision controls what happens next</div>
+        </div>
+      </div>
+
+      {/* Decision selector */}
+      <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:16 }}>
+        {decisions.map(d => (
+          <label key={d.value} style={{
+            display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
+            borderRadius:8, cursor:"pointer",
+            background: decision===d.value ? d.color+"15" : "var(--bg)",
+            border: `1px solid ${decision===d.value ? d.color+"60" : "var(--border)"}`,
+            transition:"all .15s",
+          }}>
+            <input type="radio" name="decision" value={d.value}
+              checked={decision===d.value} onChange={e => setDecision(e.target.value)}
+              style={{ accentColor: d.color }} />
+            <span style={{ color: decision===d.value ? d.color : "var(--text)", fontWeight:decision===d.value?700:400 }}>
+              {d.label}
+            </span>
+            <span style={{ color:"var(--muted)", fontSize:12, marginLeft:"auto" }}>{d.desc}</span>
+          </label>
+        ))}
+      </div>
+
+      {/* Conditional text areas */}
+      {decision==="approve_with_notes" && (
+        <div className="slide-in" style={{ marginBottom:12 }}>
+          <div style={{ fontSize:12, color:"var(--muted)", marginBottom:6 }}>Notes for PR description:</div>
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)}
+            placeholder="These notes will be added to the PR body…"
+            style={{ width:"100%", minHeight:80, background:"var(--bg)", border:"1px solid var(--border)",
+              borderRadius:8, color:"var(--text)", padding:"10px 12px", fontSize:13, resize:"vertical",
+              outline:"none", fontFamily:"inherit" }} />
+        </div>
+      )}
+      {decision==="revise_plan" && (
+        <div className="slide-in" style={{ marginBottom:12 }}>
+          <div style={{ fontSize:12, color:"var(--muted)", marginBottom:6 }}>Instructions for the judge:</div>
+          <textarea value={planNotes} onChange={e=>setPlanNotes(e.target.value)}
+            placeholder="Describe what should change in the plan…"
+            style={{ width:"100%", minHeight:100, background:"var(--bg)", border:"1px solid var(--border)",
+              borderRadius:8, color:"var(--text)", padding:"10px 12px", fontSize:13, resize:"vertical",
+              outline:"none", fontFamily:"inherit" }} />
+        </div>
+      )}
+      {decision==="revise_implementation" && (
+        <div className="slide-in" style={{ marginBottom:12 }}>
+          <div style={{ fontSize:12, color:"var(--muted)", marginBottom:6 }}>Instructions for Claude Code:</div>
+          <textarea value={implNotes} onChange={e=>setImplNotes(e.target.value)}
+            placeholder="Describe what should change in the implementation…"
+            style={{ width:"100%", minHeight:100, background:"var(--bg)", border:"1px solid var(--border)",
+              borderRadius:8, color:"var(--text)", padding:"10px 12px", fontSize:13, resize:"vertical",
+              outline:"none", fontFamily:"inherit" }} />
+        </div>
+      )}
+
+      {/* Reviewer + Submit */}
+      <div style={{ display:"flex", gap:10, alignItems:"center", marginTop:4 }}>
+        <input value={reviewer} onChange={e=>setReviewer(e.target.value)}
+          placeholder="Your name / @handle"
+          style={{ flex:1, background:"var(--bg)", border:"1px solid var(--border)", borderRadius:8,
+            color:"var(--text)", padding:"9px 12px", fontSize:13, outline:"none", fontFamily:"inherit" }} />
+        <button onClick={submit} disabled={submitting} style={{
+          padding:"9px 24px", borderRadius:8, border:"none", cursor:submitting?"wait":"pointer",
+          fontWeight:700, fontSize:13, fontFamily:"inherit",
+          background: decision==="abort"
+            ? "var(--red)"
+            : "linear-gradient(135deg, var(--accent), var(--purple))",
+          color:"#fff", opacity: submitting ? 0.6 : 1,
+        }}>
+          {submitting ? "Submitting…" : decision==="abort" ? "Abort" : "Submit Decision"}
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+// ─── Activity Log ─────────────────────────────────────────────────────────────
+
+function ActivityLog({ logs }) {
+  const ref = useRef(null);
+  useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [logs]);
+  if (!logs?.length) return null;
+
+  return (
+    <Card>
+      <div style={{ fontWeight:700, fontSize:12, color:"var(--muted)", textTransform:"uppercase",
+        letterSpacing:"0.08em", marginBottom:10 }}>Activity Log</div>
+      <div ref={ref} style={{ maxHeight:180, overflowY:"auto", display:"flex", flexDirection:"column", gap:3 }}>
+        {logs.slice(-50).map((entry, i) => (
+          <div key={i} style={{ display:"flex", gap:8, fontSize:11.5, fontFamily:"monospace" }}>
+            <span style={{ color:"var(--muted)", flexShrink:0 }}>
+              {new Date(entry.ts).toLocaleTimeString()}
+            </span>
+            <span style={{
+              color: entry.level==="error" ? "var(--red)" : entry.level==="warn" ? "var(--yellow)" : "var(--muted)"
+            }}>{entry.msg}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// ─── PR Banner ────────────────────────────────────────────────────────────────
+
+function PRBanner({ url }) {
+  if (!url || url.startsWith("manual:")) return null;
+  return (
+    <Card style={{ border:"1px solid var(--green)40", background:"#22c55e08", textAlign:"center" }}>
+      <div style={{ fontSize:28, marginBottom:8 }}>🎉</div>
+      <div style={{ fontWeight:700, fontSize:16, color:"var(--green)", marginBottom:6 }}>Pull Request Created</div>
+      <a href={url} target="_blank" rel="noopener" style={{
+        color:"var(--accent)", fontSize:13, wordBreak:"break-all",
+      }}>{url}</a>
+    </Card>
+  );
+}
+
+// ─── Config Editor ────────────────────────────────────────────────────────────
+
+const VALID_TOOLS = ["claude", "opencode", "pi"];
+
+function ConfigEditor({ onDone }) {
+  const { config, setConfig, loading, saving, error, saved, save } = useConfig();
+
+  if (loading || !config) return (
+    <div style={{ height:"100%", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <Spinner size={32} />
+    </div>
+  );
+
+  const updateAgent = (section, index, field, value) => {
+    setConfig(prev => {
+      const next = structuredClone(prev);
+      if (section === "panelists") {
+        next.panelists[index][field] = value;
+      } else {
+        next[section][field] = value;
+      }
+      return next;
+    });
+  };
+
+  const addPanelist = () => {
+    setConfig(prev => ({
+      ...prev,
+      panelists: [...prev.panelists, {
+        id: `panelist-${Date.now()}`,
+        label: "New Panelist",
+        icon: "🤖",
+        tool: "claude",
+        model: "",
+        promptMode: "file",
+        promptFile: "./prompts/new.md",
+        systemPrompt: "",
+      }],
+    }));
+  };
+
+  const removePanelist = (index) => {
+    setConfig(prev => ({
+      ...prev,
+      panelists: prev.panelists.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleSave = () => save(config);
+
+  return (
+    <div style={{ flex:1, overflowY:"auto", padding:"24px 28px", display:"flex", flexDirection:"column", gap:20 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div>
+          <div style={{ fontWeight:700, fontSize:18, color:"var(--text)", marginBottom:4 }}>Agent Configuration</div>
+          <div style={{ fontSize:12, color:"var(--muted)" }}>Changes are saved to config/panelists.json and take effect on the next run.</div>
+        </div>
+        <div style={{ display:"flex", gap:10 }}>
+          <button onClick={onDone} style={secondaryBtn}>← Back to Dashboard</button>
+          <button onClick={handleSave} disabled={saving} style={primaryBtn}>
+            {saving ? "Saving…" : saved ? "Saved ✓" : "Save Config"}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <Card style={{ border:"1px solid var(--red)40", background:"#ef444408" }}>
+          <div style={{ color:"var(--red)", fontSize:13 }}>⚠ {error}</div>
+        </Card>
+      )}
+
+      <Card>
+        <div style={{ fontWeight:700, fontSize:13, color:"var(--text)", marginBottom:14 }}>Panelists</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {config.panelists.map((p, i) => (
+            <AgentForm
+              key={p.id}
+              agent={p}
+              showId
+              onChange={(field, value) => updateAgent("panelists", i, field, value)}
+              onRemove={() => removePanelist(i)}
+            />
+          ))}
+        </div>
+        <button onClick={addPanelist} style={{ ...secondaryBtn, marginTop:14 }}>+ Add Panelist</button>
+      </Card>
+
+      <Card>
+        <div style={{ fontWeight:700, fontSize:13, color:"var(--text)", marginBottom:14 }}>Judge</div>
+        <AgentForm agent={config.judge} onChange={(field, value) => updateAgent("judge", 0, field, value)} />
+      </Card>
+
+      <Card>
+        <div style={{ fontWeight:700, fontSize:13, color:"var(--text)", marginBottom:14 }}>Validator</div>
+        <AgentForm agent={config.validator} onChange={(field, value) => updateAgent("validator", 0, field, value)} />
+      </Card>
+
+      <div style={{ height:20 }} />
+    </div>
+  );
+}
+
+function AgentForm({ agent, showId, onChange, onRemove }) {
+  return (
+    <div style={{
+      background:"var(--bg)", border:"1px solid var(--border)", borderRadius:10, padding:14,
+    }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:12, marginBottom:12 }}>
+        {showId && (
+          <Field label="ID" value={agent.id} onChange={v => onChange("id", v)} placeholder="security" />
+        )}
+        <Field label="Label" value={agent.label} onChange={v => onChange("label", v)} placeholder="Security Architect" />
+        <Field label="Icon" value={agent.icon} onChange={v => onChange("icon", v)} placeholder="🔐" />
+        <Field label="Model" value={agent.model} onChange={v => onChange("model", v)} placeholder="claude-opus-4-5" />
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"160px 1fr", gap:12, marginBottom:12 }}>
+        <div>
+          <div style={{ fontSize:11, color:"var(--muted)", marginBottom:6 }}>Tool</div>
+          <select
+            value={agent.tool}
+            onChange={e => onChange("tool", e.target.value)}
+            style={inputStyle}
+          >
+            {VALID_TOOLS.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize:11, color:"var(--muted)", marginBottom:6 }}>Prompt source</div>
+          <div style={{ display:"flex", gap:10 }}>
+            <label style={{ display:"flex", alignItems:"center", gap:6, color:"var(--text)", fontSize:13, cursor:"pointer" }}>
+              <input type="radio" checked={agent.promptMode === "file"} onChange={() => onChange("promptMode", "file")} />
+              Markdown file
+            </label>
+            <label style={{ display:"flex", alignItems:"center", gap:6, color:"var(--text)", fontSize:13, cursor:"pointer" }}>
+              <input type="radio" checked={agent.promptMode === "inline"} onChange={() => onChange("promptMode", "inline")} />
+              Inline
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {agent.promptMode === "file" ? (
+        <Field
+          label="Prompt file path"
+          value={agent.promptFile}
+          onChange={v => onChange("promptFile", v)}
+          placeholder="./prompts/security.md"
+        />
+      ) : (
+        <div>
+          <div style={{ fontSize:11, color:"var(--muted)", marginBottom:6 }}>System prompt</div>
+          <textarea
+            value={agent.systemPrompt}
+            onChange={e => onChange("systemPrompt", e.target.value)}
+            placeholder="Enter the system prompt here…"
+            style={{ ...inputStyle, minHeight:120, resize:"vertical" }}
+          />
+        </div>
+      )}
+
+      {onRemove && (
+        <button onClick={onRemove} style={{ ...dangerBtn, marginTop:12 }}>Remove panelist</button>
+      )}
+    </div>
+  );
+}
+
+function Field({ label, value, onChange, placeholder }) {
+  return (
+    <div>
+      <div style={{ fontSize:11, color:"var(--muted)", marginBottom:6 }}>{label}</div>
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={inputStyle}
+      />
+    </div>
+  );
+}
+
+const inputStyle = {
+  width:"100%", background:"var(--surface)", border:"1px solid var(--border)",
+  borderRadius:6, color:"var(--text)", padding:"8px 10px", fontSize:13,
+  outline:"none", fontFamily:"inherit",
+};
+
+const btnBase = {
+  padding:"8px 16px", borderRadius:8, border:"none", cursor:"pointer",
+  fontWeight:700, fontSize:13, fontFamily:"inherit",
+};
+
+const primaryBtn = {
+  ...btnBase,
+  background:"linear-gradient(135deg, var(--accent), var(--purple))",
+  color:"#fff",
+};
+
+const secondaryBtn = {
+  ...btnBase,
+  background:"var(--surface)", color:"var(--text)", border:"1px solid var(--border)",
+};
+
+const dangerBtn = {
+  ...btnBase,
+  background:"transparent", color:"var(--red)", border:"1px solid var(--red)40",
+};
+
+// ─── Header ───────────────────────────────────────────────────────────────────
+
+function Header({ state, connected, view, setView }) {
+  return (
+    <div style={{
+      padding:"16px 28px", borderBottom:"1px solid var(--border)",
+      background:"var(--surface)", display:"flex", alignItems:"center",
+      justifyContent:"space-between", flexShrink:0,
+    }}>
+      <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+        <div style={{
+          width:32, height:32, borderRadius:8, display:"flex", alignItems:"center",
+          justifyContent:"center", fontSize:17,
+          background:"linear-gradient(135deg, var(--accent), var(--purple))",
+        }}>⚖️</div>
+        <div>
+          <div style={{ fontWeight:700, fontSize:15, color:"var(--text)" }}>Perspective Council</div>
+          {state && <div style={{ fontSize:11, color:"var(--muted)" }}>
+            Run {state.runId} · {state.repoPath?.split("/").slice(-2).join("/")} · {state.branch}
+          </div>}
+        </div>
+      </div>
+      <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+        <div style={{ display:"flex", gap:6 }}>
+          <button
+            onClick={() => setView("dashboard")}
+            style={view === "dashboard" ? navBtnActive : navBtn}
+          >Dashboard</button>
+          <button
+            onClick={() => setView("config")}
+            style={view === "config" ? navBtnActive : navBtn}
+          >Config</button>
+        </div>
+        <div style={{ width:1, height:20, background:"var(--border)" }} />
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <div style={{
+            width:7, height:7, borderRadius:"50%",
+            background: connected ? "var(--green)" : "var(--red)",
+            boxShadow: connected ? "0 0 6px var(--green)" : "none",
+          }} />
+          <span style={{ fontSize:11, color:"var(--muted)" }}>{connected ? "Live" : "Reconnecting…"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const navBtn = {
+  padding:"6px 12px", borderRadius:6, border:"1px solid transparent",
+  background:"transparent", color:"var(--muted)", fontSize:12,
+  cursor:"pointer", fontFamily:"inherit", fontWeight:600,
+};
+
+const navBtnActive = {
+  ...navBtn,
+  background:"var(--accent)20", color:"var(--accent)", border:"1px solid var(--accent)40",
+};
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+
+function App() {
+  const { state, connected } = useCouncil();
+  const [view, setView] = useState("dashboard");
+
+  if (!state) return (
+    <div style={{ height:"100%", display:"flex", flexDirection:"column",
+      alignItems:"center", justifyContent:"center", gap:16 }}>
+      <Spinner size={32} />
+      <div style={{ color:"var(--muted)", fontSize:13 }}>Waiting for pipeline to start…</div>
+      <div style={{ fontSize:11, color:"var(--muted)", opacity:.5 }}>
+        Run: <code>bun run src/main.ts --repo /your/repo --context "…"</code>
+      </div>
+    </div>
+  );
+
+  const isAborted = state.currentStage === "aborted";
+
+  return (
+    <div style={{ height:"100%", display:"flex", flexDirection:"column" }}>
+      <Header state={state} connected={connected} view={view} setView={setView} />
+
+      {view === "config" ? (
+        <ConfigEditor onDone={() => setView("dashboard")} />
+      ) : (
+      <div style={{ flex:1, overflowY:"auto", padding:"24px 28px", display:"flex", flexDirection:"column", gap:20 }}>
+
+        {/* Stage pipeline */}
+        <Card>
+          <StagePipeline currentStage={isAborted ? "aborted" : state.currentStage} />
+          {isAborted && (
+            <div style={{ marginTop:12, color:"var(--red)", fontSize:13 }}>
+              ✗ Aborted: {state.error ?? "User requested abort"}
+            </div>
+          )}
+        </Card>
+
+        {/* Iteration badge */}
+        {state.iteration > 0 && (
+          <div style={{ fontSize:12, color:"var(--muted)" }}>
+            Iteration {state.iteration} / {state.maxIterations}
+          </div>
+        )}
+
+        {/* Panelists */}
+        {state.panelists?.length > 0 && (
+          <div>
+            <div style={{ fontSize:11, fontWeight:700, color:"var(--muted)", textTransform:"uppercase",
+              letterSpacing:"0.08em", marginBottom:10 }}>Panel</div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12 }}>
+              {state.panelists.map(p => <PanelistCard key={p.id} panelist={p} />)}
+            </div>
+          </div>
+        )}
+
+        {/* Tasks */}
+        {state.tasks?.length > 0 && (
+          <TaskList tasks={state.tasks} plan={state.judgePlan} />
+        )}
+
+        {/* Validator */}
+        {state.validatorReport && <ValidatorPanel report={state.validatorReport} />}
+
+        {/* HIL */}
+        <HILPanel state={state} />
+
+        {/* PR */}
+        <PRBanner url={state.prUrl} />
+
+        {/* Log */}
+        <ActivityLog logs={state.logs} />
+
+        <div style={{ height:20 }} />
+      </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
