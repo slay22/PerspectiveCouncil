@@ -64,7 +64,10 @@ describe("loadConfig greenfield prompt selection", () => {
     await fs.writeFile(path.join(dir, "prompts", "security.md"), "MAINTENANCE PROMPT");
     await fs.writeFile(path.join(dir, "prompts", "greenfield", "security.md"), "GREENFIELD PROMPT");
     const config = {
-      panelists: [{ id: "security", label: "Security", tool: "claude", promptFile: "./prompts/security.md" }],
+      panelists: [
+        { id: "security", label: "Security", tool: "claude", promptFile: "./prompts/security.md" },
+        { id: "quality",  label: "Quality",  tool: "pi",     systemPrompt: "q" },
+      ],
       judge: { tool: "pi", label: "Judge", systemPrompt: "j" },
       validator: { tool: "claude", label: "Validator", systemPrompt: "v" },
     };

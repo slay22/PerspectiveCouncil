@@ -14,6 +14,7 @@ describe("loadConfig with a custom --config path", () => {
     const config = {
       panelists: [
         { id: "security", label: "Security", tool: "claude", promptFile: "./prompts/sec.md" },
+        { id: "quality",  label: "Quality",  tool: "pi",     systemPrompt: "quality inline" },
       ],
       judge: { tool: "pi", label: "Judge", systemPrompt: "judge inline" },
       validator: { tool: "claude", label: "Validator", systemPrompt: "validator inline" },

@@ -121,6 +121,12 @@ describe("CouncilConfigSchema", () => {
           tool: "claude",
           promptFile: "./prompts/security.md",
         },
+        {
+          id: "quality",
+          label: "Quality",
+          tool: "pi",
+          promptFile: "./prompts/quality.md",
+        },
       ],
       judge: {
         tool: "pi",
@@ -143,6 +149,12 @@ describe("CouncilConfigSchema", () => {
           id: "security",
           label: "Security",
           tool: "claude",
+        },
+        {
+          id: "quality",
+          label: "Quality",
+          tool: "pi",
+          systemPrompt: "ok",
         },
       ],
       judge: {

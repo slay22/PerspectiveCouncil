@@ -112,6 +112,9 @@ export const AgentConfigSchema = z.object({
 
 export const PanelistConfigSchema = AgentConfigSchema.extend({
   id: z.string().min(1),
+  // Inactive panelists are configured but do not participate in runs.
+  // Absent === active (backward compatible with existing panelists.json).
+  active: z.boolean().optional(),
 });
 
 // ─── Forge (PR/MR hosting) ──────────────────────────────────────────────────
@@ -156,7 +159,13 @@ export const CouncilConfigSchema = z.object({
   validator: AgentConfigSchema,
   forge: ForgeConfigSchema.optional(),
   evaluation: EvaluationConfigSchema.optional(),
-});
+}).refine(
+  // The council needs a minimum of two active reviewers to produce
+  // meaningful findings (a single expert is just a chat with extra steps).
+  // Inactive panelists are kept in panelists.json for re-activation later.
+  (c) => c.panelists.filter((p) => p.active !== false).length >= 2,
+  { message: "At least 2 panelists must be active", path: ["panelists"] }
+);
 
 export type CouncilConfig = z.infer<typeof CouncilConfigSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;

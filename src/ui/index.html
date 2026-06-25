@@ -4,40 +4,129 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Perspective Council</title>
+<link rel="preload" href="https://fonts.bunny.net/jbm.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preconnect" href="https://fonts.bunny.net" crossorigin>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
+  /* ── Reset ──────────────────────────────────────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* ── Design tokens — light default (herdr cream) ────────────────────── */
   :root {
-    --bg:       #09090f;
-    --surface:  #0f0f1a;
-    --border:   #1e1e30;
-    --text:     #e2e2f0;
-    --muted:    #5a5a7a;
-    --accent:   #6366f1;
-    --purple:   #a855f7;
-    --red:      #ef4444;
-    --yellow:   #f59e0b;
-    --green:    #22c55e;
-    --teal:     #2dd4bf;
-    --orange:   #f97316;
+    --bg:            #f0eee9;
+    --bg-elevated:   #f5f3ee;
+    --bg-sunken:     #e8e6e0;
+    --ink:           #1a1a18;
+    --ink-soft:      #3a3a36;
+    --muted:         #6b6b66;
+    --muted-2:       #8a8a84;
+    --line:          #d8d6d0;
+    --line-strong:   #c4c2bb;
+    --accent:        #4a9eff;
+    --accent-soft:   color-mix(in srgb, #4a9eff 12%, transparent);
+    --green:         #2d9f52;
+    --yellow:        #b8860b;
+    --red:           #c73e3e;
+    --purple:        #8b7ac9;
+    --teal:          #2d9f8a;
+    --radius-sm:     2px;
+    --radius-md:     4px;
+    --radius-lg:     6px;
+    --mono:          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --body:          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    /* Terminal palette (for the activity log) */
+    --term-bg:       #1a1d22;
+    --term-sidebar:  #15181d;
+    --term-text:     #c8cdd4;
+    --term-prompt:   #4a9eff;
+    --term-cmd:      #8ecf7a;
+    --term-str:      #e6c060;
+    --term-dim:      #6a7078;
+    --term-blue:     #4a9eff;
+    --term-green:    #7ecf8a;
+    --term-red:      #ff6b6b;
   }
-  html, body { height: 100%; background: var(--bg); color: var(--text);
-    font-family: 'Inter', system-ui, sans-serif; font-size: 14px; }
+
+  /* ── Dark mode (Tokyo Night) — auto, no opt-in required ────────────── */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:            #1a1b26;
+      --bg-elevated:   #202331;
+      --bg-sunken:     #16161e;
+      --ink:           #d5dcff;
+      --ink-soft:      #c0caf5;
+      --muted:         #737aa2;
+      --muted-2:       #565f89;
+      --line:          #2f3549;
+      --line-strong:   #414868;
+      --accent:        #7aa2f7;
+      --accent-soft:   color-mix(in srgb, #7aa2f7 14%, transparent);
+      --green:         #9ece6a;
+      --yellow:        #e0af68;
+      --red:           #f7768e;
+      --purple:        #bb9af7;
+      --teal:          #7dcfff;
+      --term-bg:       #1a1b26;
+      --term-text:     #c0caf5;
+      --term-prompt:   #7aa2f7;
+      --term-cmd:      #9ece6a;
+      --term-str:      #e0af68;
+      --term-dim:      #565f89;
+      --term-blue:     #7aa2f7;
+      --term-green:    #9ece6a;
+      --term-red:      #f7768e;
+    }
+  }
+
+  /* ── Manual palette override (?palette=catppuccin etc.) ────────────── */
+  [data-palette="catppuccin"] {
+    --bg:#11111b; --bg-elevated:#181825; --bg-sunken:#0d0d14;
+    --ink:#f5e0dc; --ink-soft:#cdd6f4; --muted:#9399b2; --muted-2:#6c7086;
+    --line:#313244; --line-strong:#45475a;
+    --accent:#89b4fa; --green:#a6e3a1; --yellow:#f9e2af; --red:#f38ba8; --purple:#cba6f7; --teal:#94e2d5;
+  }
+
+  /* ── Base ───────────────────────────────────────────────────────────── */
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
   #root { height: 100%; }
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { background: var(--bg); }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-  @keyframes slideIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
-  @keyframes glow { 0%,100%{box-shadow:0 0 8px #6366f140} 50%{box-shadow:0 0 20px #6366f180} }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted-2); }
 
-  .spin { animation: spin 1s linear infinite; }
-  .pulse { animation: pulse 1.8s ease-in-out infinite; }
-  .slide-in { animation: slideIn .25s ease-out both; }
+  /* ── Focus ring (universal) ────────────────────────────────────────── */
+  button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-soft);
+    border-color: var(--accent);
+  }
+
+  /* ── Animations ────────────────────────────────────────────────────── */
+  @keyframes spin      { to { transform: rotate(360deg); } }
+  @keyframes pulse     { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  @keyframes slideIn   { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes glow      { 0%,100% { box-shadow: 0 0 0 1px var(--accent-soft); } 50% { box-shadow: 0 0 0 1px var(--accent-soft), 0 0 24px -8px var(--accent); } }
+  @keyframes chipPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+  .spin      { animation: spin 1s linear infinite; }
+  .pulse     { animation: pulse 1.8s ease-in-out infinite; }
+  .slide-in  { animation: slideIn .25s ease-out both; }
+  .chip-pulse{ animation: chipPulse 1.6s ease-in-out infinite; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spin, .pulse, .slide-in, .chip-pulse { animation: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -45,25 +134,44 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+/* ── Manual palette override (?palette=catppuccin etc.) ─────────────── */
+(function applyPalette() {
+  try {
+    const p = new URLSearchParams(location.search).get("palette");
+    if (p) document.documentElement.dataset.palette = p;
+  } catch {}
+})();
+
+/* ─── Constants ─────────────────────────────────────────────────────────── */
 const STAGE_ORDER = ["init","worktrees","panel","judge","implement","validate","hil","pr","done","aborted"];
 const STAGE_LABEL = {
   init:"Initialising", worktrees:"Worktrees", panel:"Panel Analysis",
   judge:"Judge", implement:"Implementation", validate:"Validator",
   hil:"Human Review", pr:"Pull Request", done:"Complete", aborted:"Aborted"
 };
-const RISK_COLOR = { critical:"#ef4444", high:"#f59e0b", medium:"#6366f1", low:"#5a5a7a" };
-const PRIORITY_COLOR = { P0:"#ef4444", P1:"#f59e0b", P2:"#5a5a7a" };
-const VERDICT_COLOR = { PASS:"#22c55e", PARTIAL:"#f59e0b", REJECT:"#ef4444" };
+const STAGE_KICKER = {
+  init:"init", worktrees:"worktrees", panel:"panel", judge:"judge",
+  implement:"implement", validate:"validate", hil:"hil", pr:"pr", done:"done"
+};
+const STATUS = {
+  pending:  { color: "var(--muted)",  label: "○ pending",  dot: "○",  pulse: false },
+  running:  { color: "var(--yellow)", label: "● working",  dot: "●",  pulse: true  },
+  done:     { color: "var(--green)",  label: "✓ done",     dot: "✓",  pulse: false },
+  error:    { color: "var(--red)",    label: "✕ error",    dot: "✕",  pulse: false },
+  failed:   { color: "var(--red)",    label: "✕ failed",   dot: "✕",  pulse: false },
+  blocked:  { color: "var(--red)",    label: "◉ blocked",  dot: "◉",  pulse: false },
+};
+const RISK_COLOR    = { critical:"var(--red)", high:"var(--yellow)", medium:"var(--accent)", low:"var(--muted)" };
+const PRIORITY_COLOR= { P0:"var(--red)", P1:"var(--yellow)", P2:"var(--muted)" };
+const VERDICT_COLOR = { PASS:"var(--green)", PARTIAL:"var(--yellow)", REJECT:"var(--red)" };
 
-// Auth header for config/HIL endpoints. The server injects the token (empty
-// string when auth is disabled) into window.__COUNCIL_API_TOKEN__.
+/* ─── Auth helper ───────────────────────────────────────────────────────── */
 function authHeaders() {
   const t = window.__COUNCIL_API_TOKEN__;
   return t ? { Authorization: "Bearer " + t } : {};
 }
 
-// ─── WebSocket Hook ───────────────────────────────────────────────────────────
+/* ─── WebSocket Hook ────────────────────────────────────────────────────── */
 function useCouncil() {
   const [state, setState] = useState(null);
   const [connected, setConnected] = useState(false);
@@ -116,7 +224,6 @@ function useCouncil() {
   }, []);
 
   useEffect(() => {
-    // Load full state first (handles refresh)
     fetch("/api/state").then(r => r.json()).then(data => {
       if (!data.error) setState(data);
     }).catch(() => {});
@@ -142,8 +249,7 @@ function useCouncil() {
   return { state, connected };
 }
 
-// ─── Config Hook ──────────────────────────────────────────────────────────────
-
+/* ─── Config Hook ───────────────────────────────────────────────────────── */
 function useConfig() {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -152,24 +258,18 @@ function useConfig() {
   const [saved, setSaved] = useState(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
       const res = await fetch("/api/config", { headers: authHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load config");
       setConfig(normalizeConfig(data));
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { setError(String(e)); }
+    finally { setLoading(false); }
   }, []);
 
   const save = useCallback(async (nextConfig) => {
-    setSaving(true);
-    setError(null);
-    setSaved(false);
+    setSaving(true); setError(null); setSaved(false);
     try {
       const payload = denormalizeConfig(nextConfig);
       const res = await fetch("/api/config", {
@@ -181,28 +281,24 @@ function useConfig() {
       if (!res.ok) throw new Error(data.error ?? "Failed to save config");
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setSaving(false);
-    }
+    } catch (e) { setError(String(e)); }
+    finally { setSaving(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
   return { config, setConfig, loading, saving, error, saved, load, save };
 }
 
 function normalizeConfig(raw) {
-  const toForm = (agent) => {
-    const mode = agent.promptFile ? "file" : "inline";
-    return {
-      ...agent,
-      promptMode: mode,
-      promptFile: agent.promptFile ?? "",
-      systemPrompt: agent.systemPrompt ?? "",
-    };
-  };
+  const toForm = (agent) => ({
+    ...agent,
+    promptMode: agent.promptFile ? "file" : "inline",
+    promptFile: agent.promptFile ?? "",
+    systemPrompt: agent.systemPrompt ?? "",
+    // active is undefined for the default ("on") state; only the form
+    // stores the explicit `false`. This keeps the loaded config predictable.
+    active: agent.active === false ? false : true,
+  });
   const f = raw.forge ?? {};
   return {
     panelists: (raw.panelists ?? []).map(toForm),
@@ -210,21 +306,16 @@ function normalizeConfig(raw) {
     validator: toForm(raw.validator ?? {}),
     forge: {
       provider: f.provider ?? "github",
-      repo: f.repo ?? "",
-      baseUrl: f.baseUrl ?? "",
-      tokenEnv: f.tokenEnv ?? "",
-      remote: f.remote ?? "",
+      repo: f.repo ?? "", baseUrl: f.baseUrl ?? "",
+      tokenEnv: f.tokenEnv ?? "", remote: f.remote ?? "",
       cli: f.cli !== false,
     },
     evaluation: (() => {
       const e = raw.evaluation ?? {};
       return {
         enabled: e.enabled === true,
-        install: e.install ?? "",
-        build: e.build ?? "",
-        test: e.test ?? "",
-        run: e.run ?? "",
-        cwd: e.cwd ?? "",
+        install: e.install ?? "", build: e.build ?? "",
+        test: e.test ?? "", run: e.run ?? "", cwd: e.cwd ?? "",
         timeoutMs: e.timeoutMs != null ? String(e.timeoutMs) : "",
       };
     })(),
@@ -234,16 +325,14 @@ function normalizeConfig(raw) {
 function denormalizeConfig(form) {
   const toRaw = (agent) => {
     const raw = {
-      tool: agent.tool,
-      label: agent.label,
-      icon: agent.icon,
+      tool: agent.tool, label: agent.label, icon: agent.icon,
       model: agent.model || undefined,
     };
-    if (agent.promptMode === "file") {
-      raw.promptFile = agent.promptFile || undefined;
-    } else {
-      raw.systemPrompt = agent.systemPrompt || undefined;
-    }
+    if (agent.promptMode === "file") raw.promptFile = agent.promptFile || undefined;
+    else                              raw.systemPrompt = agent.systemPrompt || undefined;
+    // Only emit `active: false`. The default (true) is implicit, so
+    // panelists.json stays clean for the common case.
+    if (agent.active === false) raw.active = false;
     return raw;
   };
   const f = form.forge ?? {};
@@ -253,20 +342,16 @@ function denormalizeConfig(form) {
     validator: toRaw(form.validator),
     forge: {
       provider: f.provider || "github",
-      repo: f.repo || undefined,
-      baseUrl: f.baseUrl || undefined,
-      tokenEnv: f.tokenEnv || undefined,
-      remote: f.remote || undefined,
+      repo: f.repo || undefined, baseUrl: f.baseUrl || undefined,
+      tokenEnv: f.tokenEnv || undefined, remote: f.remote || undefined,
       cli: f.cli === false ? false : undefined,
     },
     evaluation: (() => {
       const e = form.evaluation ?? {};
       return {
         enabled: e.enabled === true ? true : undefined,
-        install: e.install || undefined,
-        build: e.build || undefined,
-        test: e.test || undefined,
-        run: e.run || undefined,
+        install: e.install || undefined, build: e.build || undefined,
+        test: e.test || undefined, run: e.run || undefined,
         cwd: e.cwd || undefined,
         timeoutMs: e.timeoutMs ? Number(e.timeoutMs) : undefined,
       };
@@ -274,71 +359,444 @@ function denormalizeConfig(form) {
   };
 }
 
-// ─── Components ───────────────────────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* DESIGN SYSTEM — primitives shared across pages                         */
+/* ═══════════════════════════════════════════════════════════════════════ */
 
+/* Kicker — `# section` label, small mono, uppercase, muted */
+function Kicker({ children }) {
+  return (
+    <div style={{
+      fontFamily: "var(--mono)", fontSize: 11, fontWeight: 500,
+      color: "var(--muted)", textTransform: "uppercase",
+      letterSpacing: "0.08em",
+    }}># {children}</div>
+  );
+}
+
+/* Section — kicker + title + optional action slot */
+function Section({ kicker, title, children, action, style }) {
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: 10, ...style }}>
+      {(kicker || title || action) && (
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            {kicker && <Kicker>{kicker}</Kicker>}
+            {title && <h2 style={{
+              margin: "4px 0 0", fontSize: 17, fontWeight: 700, color: "var(--ink)",
+              fontFamily: "var(--body)", letterSpacing: "-0.01em",
+            }}>{title}</h2>}
+          </div>
+          {action}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+}
+
+/* Card — the surface unit. 6px radius, hairline border, elevated bg */
+function Card({ children, style, glow, accent }) {
+  return (
+    <div style={{
+      background: "var(--bg-elevated)",
+      border: `1px solid ${accent ? accent : "var(--line)"}`,
+      borderRadius: "var(--radius-lg)",
+      padding: "18px 20px",
+      animation: glow ? "glow 2s ease-in-out infinite" : undefined,
+      ...style,
+    }}>{children}</div>
+  );
+}
+
+/* Spinner — the only motion primitive */
+function Spinner({ size = 16, color = "var(--accent)" }) {
+  return (
+    <div className="spin" style={{
+      width: size, height: size, borderRadius: "50%",
+      border: `2px solid ${color}30`, borderTopColor: color, flexShrink: 0,
+    }} />
+  );
+}
+
+/* Badge — small uppercase label with a colored background. Use StatusChip for state. */
 function Badge({ color, children, small }) {
-  return <span style={{
-    display:"inline-block", padding: small ? "1px 6px" : "2px 8px",
-    borderRadius:4, fontSize: small ? 10 : 11, fontWeight:700,
-    background: color + "20", color, border: `1px solid ${color}40`,
-    letterSpacing:"0.04em", textTransform:"uppercase",
-  }}>{children}</span>;
+  return (
+    <span style={{
+      display: "inline-block",
+      padding: small ? "1px 6px" : "2px 8px",
+      borderRadius: "var(--radius-sm)",
+      fontSize: small ? 10 : 11, fontWeight: 700,
+      background: color + "20", color,
+      border: `1px solid ${color}40`,
+      letterSpacing: "0.04em", textTransform: "uppercase",
+      fontFamily: "var(--mono)",
+    }}>{children}</span>
+  );
 }
 
-function Card({ children, style, glow }) {
-  return <div style={{
-    background:"var(--surface)", border:"1px solid var(--border)",
-    borderRadius:12, padding:"18px 20px",
-    animation: glow ? "glow 2s ease-in-out infinite" : undefined,
-    ...style
-  }}>{children}</div>;
+/* StatusChip — labelled state. WCAG-compliant: text + color, never color alone. */
+function StatusChip({ status, model }) {
+  const s = STATUS[status] ?? STATUS.pending;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 6,
+      padding: "2px 8px", borderRadius: "var(--radius-sm)",
+      background: s.color + "14",
+      border: `1px solid ${s.color}40`,
+      fontFamily: "var(--mono)", fontSize: 11, fontWeight: 600,
+      color: s.color, letterSpacing: "0.02em",
+    }} aria-label={`status: ${s.label}${model ? `, model ${model}` : ""}`}>
+      {s.pulse
+        ? <span className="chip-pulse" style={{ fontSize: 10 }}>{s.dot}</span>
+        : <span style={{ fontSize: 10 }}>{s.dot}</span>}
+      <span>{s.label.replace(/^[○●✓✕◉] /, "")}</span>
+      {model && <span style={{ color: "var(--muted)", marginLeft: 4 }}>· {model}</span>}
+    </span>
+  );
 }
 
-function Spinner({ size=16, color="var(--accent)" }) {
-  return <div className="spin" style={{
-    width:size, height:size, borderRadius:"50%",
-    border:`2px solid ${color}30`, borderTopColor:color,
-  }} />;
+/* CommandCard — `$ id     security     [📂] [Copy]`. Used for IDs and paths.
+   Pass `onUpload` to render a small "📂" button that opens the browser's
+   native file picker; the parent handles the resulting file. */
+function CommandCard({ prompt, value, onCopy: onCopyProp, copyLabel = "Copy",
+                       onChange, onUpload, uploadLabel = "Upload…" }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value ?? "");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {}
+    onCopyProp?.();
+  };
+  const fileRef = useRef(null);
+  return (
+    <div style={{
+      position: "relative",
+      display: "flex", alignItems: "stretch",
+      background: "var(--bg-sunken)",
+      border: "1px solid var(--line)",
+      borderRadius: "var(--radius-md)",
+      fontFamily: "var(--mono)", fontSize: 12.5,
+      overflow: "hidden", minHeight: 32,
+    }}>
+      <span style={{
+        padding: "6px 10px", color: "var(--accent)",
+        background: "var(--accent-soft)", borderRight: "1px solid var(--line)",
+        fontWeight: 600, userSelect: "none", flexShrink: 0,
+        display: "flex", alignItems: "center",
+      }}>$ {prompt}</span>
+      {onChange
+        ? <input value={value ?? ""} onChange={e => onChange(e.target.value)}
+            style={{
+              flex: 1, minWidth: 0, padding: "6px 10px",
+              background: "transparent", border: "none", outline: "none",
+              color: "var(--ink-soft)", font: "inherit",
+            }} />
+        : <code style={{
+            flex: 1, minWidth: 0, padding: "6px 10px",
+            color: "var(--ink-soft)",
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            display: "flex", alignItems: "center",
+          }}>{value}</code>}
+      {onUpload && (
+        <>
+          <input ref={fileRef} type="file" accept=".md,.markdown,text/markdown"
+            onChange={e => { const f = e.target.files?.[0]; if (f) onUpload(f); e.target.value = ""; }}
+            style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
+          <button type="button" aria-label="Upload file"
+            onClick={() => fileRef.current?.click()}
+            title={uploadLabel}
+            style={{
+              padding: "0 12px", background: "transparent", border: "none",
+              borderLeft: "1px solid var(--line)", color: "var(--muted)",
+              fontFamily: "var(--body)", fontSize: 14, lineHeight: 1,
+              cursor: "pointer", flexShrink: 0, transition: "color 120ms",
+            }}>📂</button>
+        </>
+      )}
+      {value && (
+        <button onClick={onCopy} aria-label="Copy" style={{
+          padding: "0 12px", background: "transparent", border: "none",
+          borderLeft: "1px solid var(--line)", color: copied ? "var(--green)" : "var(--muted)",
+          fontFamily: "var(--body)", fontSize: 11, fontWeight: 600,
+          cursor: "pointer", flexShrink: 0, transition: "color 120ms",
+        }}>{copied ? "Copied" : copyLabel}</button>
+      )}
+    </div>
+  );
 }
 
-// ─── Stage Pipeline Bar ───────────────────────────────────────────────────────
+/* EmojiPicker — small popover of common reviewer icons. Click an emoji to
+   select; click outside (or press Esc) to close. Keeps the underlying input
+   editable for power users. */
+const REVIEWER_EMOJIS = [
+  "🔐","📊","🏗️","✅","⚖️","🧪","🚀","🔍","📐","🛡️",
+  "⚙️","📦","🎨","🧠","📈","🔬","📚","🧰","🪲","🧹",
+  "🌐","🪶","🔒","🪪","🎯","🧭",
+];
 
+function EmojiPicker({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <button type="button" aria-label="Pick icon" onClick={() => setOpen(o => !o)}
+        title="Pick an icon"
+        style={{
+          padding: "0 10px", minHeight: 32,
+          background: "var(--bg-elevated)", border: "1px solid var(--line)",
+          borderRadius: "var(--radius-md)", color: "var(--muted)",
+          fontSize: 14, lineHeight: 1, cursor: "pointer",
+          transition: "all 120ms",
+        }}>🎲</button>
+      {open && (
+        <div role="dialog" aria-label="Icon picker"
+          style={{
+            position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50,
+            background: "var(--bg-elevated)", border: "1px solid var(--line-strong)",
+            borderRadius: "var(--radius-md)", padding: 8,
+            boxShadow: "0 8px 24px -8px color-mix(in srgb, var(--ink) 30%, transparent)",
+            display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 2,
+            minWidth: 220,
+          }}>
+          {REVIEWER_EMOJIS.map(e => (
+            <button key={e} type="button"
+              onClick={() => { onChange(e); setOpen(false); }}
+              aria-label={`Use ${e}`}
+              style={{
+                width: 30, height: 30, padding: 0, fontSize: 18, lineHeight: 1,
+                background: value === e ? "var(--accent-soft)" : "transparent",
+                border: value === e ? "1px solid var(--accent)" : "1px solid transparent",
+                borderRadius: "var(--radius-sm)", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "background 80ms",
+              }}>{e}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* SegmentedControl — pill switcher, mono uppercase labels */
+function SegmentedControl({ value, onChange, options }) {
+  return (
+    <div role="tablist" style={{
+      display: "inline-flex", alignItems: "stretch",
+      background: "var(--bg-sunken)",
+      border: "1px solid var(--line)",
+      borderRadius: "var(--radius-md)",
+      padding: 2, gap: 2,
+    }}>
+      {options.map(o => {
+        const active = o.value === value;
+        return (
+          <button key={o.value} role="tab" aria-selected={active}
+            onClick={() => onChange(o.value)}
+            style={{
+              padding: "4px 12px",
+              border: "none", borderRadius: "var(--radius-sm)",
+              background: active ? "var(--bg-elevated)" : "transparent",
+              color: active ? "var(--ink)" : "var(--muted)",
+              fontFamily: "var(--mono)", fontSize: 11, fontWeight: 600,
+              textTransform: "uppercase", letterSpacing: "0.04em",
+              cursor: "pointer", transition: "all 120ms",
+              boxShadow: active ? "0 1px 0 var(--line), 0 0 0 1px var(--line)" : "none",
+            }}>{o.label}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* Field — text input with a kicker label */
+function Field({ label, value, onChange, placeholder, hint, mono }) {
+  return (
+    <div>
+      {label && <Kicker>{label}</Kicker>}
+      <input value={value ?? ""} onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          marginTop: 6, width: "100%",
+          background: "var(--bg-elevated)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--radius-md)",
+          color: "var(--ink)",
+          padding: "7px 10px", fontSize: 13,
+          fontFamily: mono ? "var(--mono)" : "var(--body)",
+          outline: "none", boxSizing: "border-box",
+          transition: "border-color 120ms, box-shadow 120ms",
+        }} />
+      {hint && <div style={{ fontSize: 11, color: "var(--muted-2)", marginTop: 4 }}>{hint}</div>}
+    </div>
+  );
+}
+
+/* Textarea — mono by default for prompt editing */
+function Textarea({ label, value, onChange, placeholder, minHeight = 120, mono = true }) {
+  return (
+    <div>
+      {label && <Kicker>{label}</Kicker>}
+      <textarea value={value ?? ""} onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          marginTop: 6, width: "100%",
+          background: "var(--bg-elevated)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--radius-md)",
+          color: "var(--ink)",
+          padding: "9px 11px", fontSize: 13,
+          fontFamily: mono ? "var(--mono)" : "var(--body)",
+          outline: "none", boxSizing: "border-box", minHeight,
+          resize: "vertical", lineHeight: 1.55,
+          transition: "border-color 120ms, box-shadow 120ms",
+        }} />
+    </div>
+  );
+}
+
+/* Buttons */
+const btnBase = {
+  padding: "7px 14px", borderRadius: "var(--radius-md)", border: "1px solid transparent",
+  cursor: "pointer", fontWeight: 600, fontSize: 13, fontFamily: "var(--body)",
+  transition: "all 120ms", lineHeight: 1.2,
+};
+const primaryBtn   = { ...btnBase, background: "var(--ink)", color: "var(--bg)", borderColor: "var(--ink)" };
+const accentBtn    = { ...btnBase, background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" };
+const secondaryBtn = { ...btnBase, background: "transparent", color: "var(--ink)", border: "1px solid var(--line-strong)" };
+const ghostBtn     = { ...btnBase, background: "transparent", color: "var(--muted)", border: "1px solid transparent" };
+const dangerBtn    = { ...btnBase, background: "transparent", color: "var(--red)", border: "1px solid color-mix(in srgb, var(--red) 35%, transparent)" };
+
+/* Nav buttons */
+const navBtn = {
+  padding: "6px 12px", borderRadius: "var(--radius-md)", border: "1px solid transparent",
+  background: "transparent", color: "var(--muted)",
+  fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)",
+  textTransform: "lowercase", letterSpacing: "0.02em",
+  cursor: "pointer", transition: "all 120ms",
+};
+const navBtnActive = {
+  ...navBtn, color: "var(--ink)", background: "var(--bg-sunken)",
+  border: "1px solid var(--line)",
+};
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* HEADER                                                                 */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function Header({ state, connected, view, setView }) {
+  return (
+    <div style={{
+      height: 60, padding: "0 28px",
+      borderBottom: "1px solid var(--line)",
+      background: "var(--bg-elevated)",
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      flexShrink: 0,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: "var(--radius-md)",
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14,
+          background: "linear-gradient(135deg, var(--accent), var(--purple))",
+          color: "#fff", flexShrink: 0,
+        }}>⚖</div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{
+            fontFamily: "var(--mono)", fontWeight: 700, fontSize: 14,
+            color: "var(--ink)", letterSpacing: "-0.01em",
+          }}>perspective council</div>
+          {state && (
+            <div style={{
+              fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--muted)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
+              run {state.runId?.slice(0, 8)} · {state.repoPath?.split("/").slice(-2).join("/")} · {state.branch}
+            </div>
+          )}
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 2 }}>
+          {[
+            { v: "dashboard", l: "dashboard" },
+            { v: "newrun",    l: "new run" },
+            { v: "config",    l: "config" },
+          ].map(t => (
+            <button key={t.v} onClick={() => setView(t.v)}
+              style={view === t.v ? navBtnActive : navBtn}>{t.l}</button>
+          ))}
+        </div>
+        <div style={{ width: 1, height: 20, background: "var(--line)" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{
+            width: 7, height: 7, borderRadius: "50%",
+            background: connected ? "var(--green)" : "var(--red)",
+            boxShadow: connected ? "0 0 0 3px color-mix(in srgb, var(--green) 20%, transparent)" : "none",
+          }} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>
+            {connected ? "live" : "reconnecting…"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* STAGE PIPELINE                                                         */
+/* ═══════════════════════════════════════════════════════════════════════ */
 function StagePipeline({ currentStage }) {
   const stages = STAGE_ORDER.filter(s => s !== "aborted");
   const currentIdx = stages.indexOf(currentStage);
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:0, overflow:"hidden" }}>
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 0 }}>
       {stages.map((s, i) => {
         const done = i < currentIdx;
         const active = i === currentIdx;
         const future = i > currentIdx;
+        const color = done ? "var(--green)" : active ? "var(--accent)" : "var(--line-strong)";
         return (
           <React.Fragment key={s}>
             <div style={{
-              display:"flex", flexDirection:"column", alignItems:"center", gap:4,
-              opacity: future ? 0.3 : 1,
-              transition:"opacity .3s",
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+              opacity: future ? 0.4 : 1, transition: "opacity .25s", flexShrink: 0,
             }}>
               <div style={{
-                width:28, height:28, borderRadius:"50%", display:"flex",
-                alignItems:"center", justifyContent:"center", fontSize:12,
-                background: done ? "var(--green)" : active ? "var(--accent)" : "var(--border)",
-                color: done||active ? "#fff" : "var(--muted)",
-                boxShadow: active ? "0 0 12px var(--accent)80" : "none",
-                transition:"all .3s",
-              }}>
-                {done ? "✓" : active ? <Spinner size={12} color="#fff" /> : i+1}
-              </div>
+                width: 24, height: 24, borderRadius: "50%",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 11, fontWeight: 700, fontFamily: "var(--mono)",
+                background: done ? "var(--green)" : active ? "var(--accent)" : "var(--bg-sunken)",
+                color: done || active ? "#fff" : "var(--muted-2)",
+                border: `1px solid ${color}`,
+                boxShadow: active ? "0 0 0 3px var(--accent-soft)" : "none",
+                transition: "all .25s",
+              }}>{done ? "✓" : i + 1}</div>
               <span style={{
-                fontSize:10, color: active ? "var(--accent)" : done ? "var(--green)" : "var(--muted)",
-                fontWeight: active ? 700 : 400, whiteSpace:"nowrap",
-              }}>{STAGE_LABEL[s]}</span>
+                fontFamily: "var(--mono)", fontSize: 10.5,
+                color: active ? "var(--accent)" : done ? "var(--green)" : "var(--muted)",
+                fontWeight: active ? 700 : 500, whiteSpace: "nowrap",
+                textTransform: "lowercase",
+              }}>{STAGE_LABEL[s].toLowerCase()}</span>
             </div>
             {i < stages.length - 1 && (
               <div style={{
-                flex:1, height:1, minWidth:8,
-                background: i < currentIdx ? "var(--green)" : "var(--border)",
-                marginBottom:18, transition:"background .3s",
+                flex: 1, height: 1, minWidth: 16, marginTop: 12,
+                background: i < currentIdx ? "var(--green)" : "var(--line)",
+                transition: "background .25s",
               }} />
             )}
           </React.Fragment>
@@ -348,60 +806,76 @@ function StagePipeline({ currentStage }) {
   );
 }
 
-// ─── Panelist Cards ───────────────────────────────────────────────────────────
-
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* PANELIST CARDS                                                         */
+/* ═══════════════════════════════════════════════════════════════════════ */
 function PanelistCard({ panelist }) {
   const [expanded, setExpanded] = useState(false);
-  const statusColor = { pending:"var(--muted)", running:"var(--accent)", done:"var(--green)", error:"var(--red)" };
-  const c = statusColor[panelist.status];
   const riskColor = panelist.result ? RISK_COLOR[panelist.result.riskLevel] : "var(--muted)";
+  const running = panelist.status === "running";
 
   return (
-    <Card style={{ position:"relative", overflow:"hidden" }} glow={panelist.status==="running"}>
-      <div style={{ position:"absolute", top:0, left:0, right:0, height:3, background:c, transition:"background .3s" }} />
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <span style={{ fontSize:20 }}>{panelist.icon}</span>
-          <div>
-            <div style={{ fontWeight:700, fontSize:13, color:"var(--text)" }}>{panelist.label}</div>
-            <div style={{ fontSize:11, color:"var(--muted)" }}>{panelist.model}</div>
+    <Card style={{ display: "flex", flexDirection: "column", gap: 12 }}
+          glow={running} accent={running ? "var(--accent)" : undefined}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <span style={{ fontSize: 18, lineHeight: 1 }}>{panelist.icon}</span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{
+              fontWeight: 700, fontSize: 13, color: "var(--ink)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>{panelist.label}</div>
+            <div style={{
+              fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--muted)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>{panelist.id}</div>
           </div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          {panelist.result && <Badge color={riskColor} small>{panelist.result.riskLevel}</Badge>}
-          {panelist.status === "running" && <Spinner size={14} color="var(--accent)" />}
-          {panelist.status === "done" && <span style={{ color:"var(--green)", fontSize:16 }}>✓</span>}
-          {panelist.status === "error" && <span style={{ color:"var(--red)", fontSize:16 }}>✗</span>}
-        </div>
+        <StatusChip status={panelist.status} model={panelist.model} />
       </div>
 
       {panelist.status === "pending" && (
-        <div style={{ color:"var(--muted)", fontSize:12 }} className="pulse">Waiting…</div>
+        <div style={{
+          fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)",
+        }} className="pulse">○ waiting…</div>
       )}
       {panelist.status === "running" && (
-        <div style={{ color:"var(--muted)", fontSize:12 }} className="pulse">Analyzing codebase…</div>
+        <div style={{
+          fontFamily: "var(--mono)", fontSize: 11, color: "var(--yellow)",
+        }} className="pulse">● analyzing…</div>
       )}
+
       {panelist.result && (
         <>
-          <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom:8 }}>
-            {panelist.result.keyFindings.slice(0,3).map((f,i) => (
-              <div key={i} style={{ fontSize:12, color:"var(--muted)", display:"flex", gap:6 }}>
-                <span style={{ color:riskColor, flexShrink:0 }}>›</span>
-                <span>{f.slice(0,90)}{f.length>90?"…":""}</span>
+          {panelist.result.riskLevel && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--muted-2)" }}>risk</span>
+              <Badge color={riskColor} small>{panelist.result.riskLevel}</Badge>
+            </div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {panelist.result.keyFindings?.slice(0, 3).map((f, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, color: "var(--ink-soft)" }}>
+                <span style={{ color: riskColor, flexShrink: 0, fontFamily: "var(--mono)" }}>›</span>
+                <span>{f.length > 100 ? f.slice(0, 100) + "…" : f}</span>
               </div>
             ))}
           </div>
-          <button onClick={() => setExpanded(!expanded)} style={{
-            background:"none", border:"1px solid var(--border)", borderRadius:6,
-            color:"var(--muted)", fontSize:11, padding:"3px 10px", cursor:"pointer",
-            marginTop:4,
-          }}>{expanded ? "▲ Less" : "▼ Full analysis"}</button>
-          {expanded && (
-            <div className="slide-in" style={{
-              marginTop:12, fontSize:12, color:"var(--muted)", lineHeight:1.7,
-              whiteSpace:"pre-wrap", maxHeight:300, overflowY:"auto",
-              background:"var(--bg)", padding:12, borderRadius:8,
-            }}>{panelist.result.analysis}</div>
+          {panelist.result.analysis && (
+            <>
+              <button onClick={() => setExpanded(!expanded)} style={{
+                ...ghostBtn, alignSelf: "flex-start", padding: "4px 10px", fontSize: 11,
+                color: "var(--muted)", border: "1px solid var(--line)",
+              }}>{expanded ? "▲ less" : "▼ full analysis"}</button>
+              {expanded && (
+                <div className="slide-in" style={{
+                  fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--ink-soft)",
+                  lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 280, overflowY: "auto",
+                  background: "var(--bg-sunken)", border: "1px solid var(--line)",
+                  borderRadius: "var(--radius-md)", padding: 12,
+                }}>{panelist.result.analysis}</div>
+              )}
+            </>
           )}
         </>
       )}
@@ -409,116 +883,136 @@ function PanelistCard({ panelist }) {
   );
 }
 
-// ─── Task List ────────────────────────────────────────────────────────────────
-
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* TASK LIST                                                              */
+/* ═══════════════════════════════════════════════════════════════════════ */
 function TaskList({ tasks, plan }) {
   if (!tasks?.length) return null;
-  const counts = { P0:0, P1:0, P2:0 };
+  const counts = { P0: 0, P1: 0, P2: 0 };
   tasks.forEach(t => counts[t.priority]++);
 
   return (
-    <Card>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <span style={{ fontSize:18 }}>📐</span>
-          <span style={{ fontWeight:700, color:"var(--text)" }}>Implementation Plan</span>
+    <Section kicker="plan" title={`implementation plan · ${tasks.length} tasks`}
+      action={<div style={{ display: "flex", gap: 4 }}>
+        {Object.entries(counts).filter(([, n]) => n > 0).map(([p, n]) => (
+          <Badge key={p} color={PRIORITY_COLOR[p]} small>{p}: {n}</Badge>
+        ))}
+      </div>}>
+      <Card>
+        {plan?.summary && (
+          <div style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12, lineHeight: 1.55 }}>
+            {plan.summary}
+          </div>
+        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {tasks.map(task => <TaskRow key={task.id} task={task} />)}
         </div>
-        <div style={{ display:"flex", gap:6 }}>
-          {Object.entries(counts).map(([p,n]) => n > 0 && (
-            <Badge key={p} color={PRIORITY_COLOR[p]} small>{p}: {n}</Badge>
-          ))}
-        </div>
-      </div>
-      {plan?.summary && (
-        <div style={{ fontSize:12.5, color:"var(--muted)", marginBottom:12, lineHeight:1.6 }}>
-          {plan.summary}
-        </div>
-      )}
-      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-        {tasks.map(task => <TaskRow key={task.id} task={task} />)}
-      </div>
-      {plan?.riskFlags?.length > 0 && (
-        <div style={{ marginTop:12, padding:"10px 14px", background:"#ef444410", borderRadius:8, border:"1px solid #ef444430" }}>
-          <div style={{ fontSize:11, fontWeight:700, color:"var(--red)", marginBottom:6 }}>🚨 RISK FLAGS</div>
-          {plan.riskFlags.map((f,i) => (
-            <div key={i} style={{ fontSize:12, color:"#ef444499" }}>⚠ {f}</div>
-          ))}
-        </div>
-      )}
-    </Card>
+        {plan?.riskFlags?.length > 0 && (
+          <div style={{
+            marginTop: 14, padding: "10px 14px",
+            background: "color-mix(in srgb, var(--red) 8%, transparent)",
+            borderRadius: "var(--radius-md)",
+            border: "1px solid color-mix(in srgb, var(--red) 30%, transparent)",
+          }}>
+            <Kicker>⚠ risk flags</Kicker>
+            <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
+              {plan.riskFlags.map((f, i) => (
+                <div key={i} style={{
+                  fontSize: 12, color: "var(--red)", display: "flex", gap: 6,
+                }}>
+                  <span style={{ fontFamily: "var(--mono)" }}>·</span>
+                  <span>{f}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+    </Section>
   );
 }
 
 function TaskRow({ task }) {
-  const statusIcon = { pending:"○", running:"◉", done:"✓", failed:"✗" }[task.status];
-  const statusColor = { pending:"var(--muted)", running:"var(--accent)", done:"var(--green)", failed:"var(--red)" }[task.status];
   const [exp, setExp] = useState(false);
-
   return (
     <div style={{
-      padding:"8px 12px", borderRadius:8, background:"var(--bg)",
-      border:`1px solid ${task.status==="running" ? "var(--accent)40" : "var(--border)"}`,
-      transition:"border-color .3s",
+      padding: "8px 12px", borderRadius: "var(--radius-md)",
+      background: "var(--bg-sunken)",
+      border: `1px solid ${task.status === "running" ? "var(--accent)40" : "var(--line)"}`,
+      transition: "border-color .25s",
     }}>
-      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-        <span style={{ color:statusColor, fontSize:14, minWidth:14 }}>
-          {task.status==="running" ? <Spinner size={12} color="var(--accent)" /> : statusIcon}
-        </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <StatusChip status={task.status} />
         <Badge color={PRIORITY_COLOR[task.priority]} small>{task.priority}</Badge>
-        <span style={{ fontSize:11, color:"var(--muted)", fontFamily:"monospace" }}>{task.id}</span>
-        <span style={{ fontSize:11, color:"var(--accent)", fontFamily:"monospace" }}>{task.action}</span>
-        <span style={{ fontSize:11, color:"var(--text)", fontFamily:"monospace", flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{task.file}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-soft)" }}>{task.id}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)" }}>{task.action}</span>
+        <span style={{
+          fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-soft)",
+          flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>{task.file}</span>
         <button onClick={() => setExp(!exp)} style={{
-          background:"none", border:"none", color:"var(--muted)", cursor:"pointer", fontSize:10, padding:"0 4px",
-        }}>{exp?"▲":"▼"}</button>
+          ...ghostBtn, padding: "2px 6px", fontSize: 10, color: "var(--muted)",
+        }}>{exp ? "▲" : "▼"}</button>
       </div>
       {exp && (
-        <div className="slide-in" style={{ marginTop:8, paddingLeft:22, fontSize:12, color:"var(--muted)", lineHeight:1.6 }}>
-          <div style={{ marginBottom:4 }}><strong style={{ color:"var(--text)" }}>Instruction:</strong> {task.instruction}</div>
-          <div><strong style={{ color:"var(--text)" }}>Rationale:</strong> {task.rationale}</div>
+        <div className="slide-in" style={{ marginTop: 8, paddingLeft: 4, fontSize: 12, color: "var(--ink-soft)", lineHeight: 1.55 }}>
+          <div style={{ marginBottom: 4 }}>
+            <span style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>instruction </span>
+            {task.instruction}
+          </div>
+          <div>
+            <span style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>rationale </span>
+            {task.rationale}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-// ─── Validator Report ─────────────────────────────────────────────────────────
-
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* VALIDATOR PANEL                                                        */
+/* ═══════════════════════════════════════════════════════════════════════ */
 function ValidatorPanel({ report }) {
   if (!report) return null;
-  const color = VERDICT_COLOR[report.verdict];
   return (
-    <Card>
-      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
-        <span style={{ fontSize:18 }}>✅</span>
-        <span style={{ fontWeight:700, color:"var(--text)" }}>Validator</span>
-        <Badge color={color}>{report.verdict}</Badge>
-      </div>
-      <div style={{ fontSize:12.5, color:"var(--muted)", marginBottom:10 }}>{report.notes}</div>
-      {report.outOfScopeChanges?.length > 0 && (
-        <div style={{ marginBottom:8 }}>
-          {report.outOfScopeChanges.map((c,i) => (
-            <div key={i} style={{ fontSize:12, color:"var(--yellow)" }}>⚠ {c}</div>
+    <Section kicker="validator" title="validation report">
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <StatusChip status={report.verdict === "PASS" ? "done" : report.verdict === "REJECT" ? "error" : "blocked"} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>{report.verdict.toLowerCase()}</span>
+        </div>
+        <div style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 10, lineHeight: 1.55 }}>{report.notes}</div>
+        {report.outOfScopeChanges?.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            {report.outOfScopeChanges.map((c, i) => (
+              <div key={i} style={{
+                fontSize: 12, color: "var(--yellow)", display: "flex", gap: 6, marginTop: 4,
+              }}>
+                <span style={{ fontFamily: "var(--mono)" }}>⚠</span><span>{c}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {report.taskResults?.map(r => (
+            <div key={r.taskId} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+              <span style={{
+                color: VERDICT_COLOR[r.verdict], fontFamily: "var(--mono)", fontSize: 13, width: 14, textAlign: "center",
+              }}>{r.verdict === "PASS" ? "✓" : r.verdict === "PARTIAL" ? "~" : "✕"}</span>
+              <span style={{ fontFamily: "var(--mono)", color: "var(--ink-soft)" }}>{r.taskId}</span>
+              <span style={{ color: "var(--muted)", flex: 1 }}>{r.notes}</span>
+            </div>
           ))}
         </div>
-      )}
-      <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-        {report.taskResults?.map(r => (
-          <div key={r.taskId} style={{ display:"flex", alignItems:"center", gap:8, fontSize:12 }}>
-            <span style={{ color: VERDICT_COLOR[r.verdict] }}>
-              {r.verdict==="PASS"?"✓":r.verdict==="PARTIAL"?"~":"✗"}
-            </span>
-            <span style={{ color:"var(--muted)", fontFamily:"monospace" }}>{r.taskId}</span>
-            <span style={{ color:"var(--muted)" }}>{r.notes}</span>
-          </div>
-        ))}
-      </div>
-    </Card>
+      </Card>
+    </Section>
   );
 }
 
-// ─── HIL Panel ────────────────────────────────────────────────────────────────
-
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* HIL PANEL                                                              */
+/* ═══════════════════════════════════════════════════════════════════════ */
 function HILPanel({ state }) {
   const [decision, setDecision] = useState("approve");
   const [notes, setNotes] = useState("");
@@ -535,8 +1029,8 @@ function HILPanel({ state }) {
     setSubmitting(true);
     try {
       await fetch("/api/hil", {
-        method:"POST",
-        headers:{"Content-Type":"application/json", ...authHeaders()},
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           decision,
           notes: notes || undefined,
@@ -553,173 +1047,186 @@ function HILPanel({ state }) {
   };
 
   if (submitted) return (
-    <Card style={{ border:"1px solid var(--green)40", background:"#22c55e08" }}>
-      <div style={{ display:"flex", alignItems:"center", gap:10, color:"var(--green)" }}>
-        <span style={{ fontSize:20 }}>✓</span>
-        <span style={{ fontWeight:700 }}>Review submitted — pipeline resuming…</span>
-      </div>
-    </Card>
+    <Section kicker="review" title="human review">
+      <Card accent="color-mix(in srgb, var(--green) 40%, transparent)"
+        style={{ background: "color-mix(in srgb, var(--green) 6%, var(--bg-elevated))" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--green)" }}>
+          <StatusChip status="done" />
+          <span style={{ fontWeight: 700 }}>Review submitted — pipeline resuming…</span>
+        </div>
+      </Card>
+    </Section>
   );
 
   const decisions = [
-    { value:"approve",             label:"✓ Approve",                  color:"var(--green)",  desc:"Create PR as-is" },
-    { value:"approve_with_notes",  label:"✎ Approve with notes",       color:"var(--teal)",   desc:"Add notes to PR description" },
-    { value:"revise_plan",         label:"⟳ Revise plan",              color:"var(--yellow)", desc:"Send back to judge with your instructions" },
-    { value:"revise_implementation",label:"⟳ Revise implementation",   color:"var(--yellow)", desc:"Send back to Claude Code" },
-    { value:"abort",               label:"✗ Abort",                    color:"var(--red)",    desc:"Discard all changes" },
+    { value: "approve",               label: "Approve",                color: "var(--green)",  desc: "Create PR as-is" },
+    { value: "approve_with_notes",    label: "Approve with notes",     color: "var(--teal)",   desc: "Add notes to PR description" },
+    { value: "revise_plan",           label: "Revise plan",            color: "var(--yellow)", desc: "Send back to judge with your instructions" },
+    { value: "revise_implementation", label: "Revise implementation",  color: "var(--yellow)", desc: "Send back to Claude Code" },
+    { value: "abort",                 label: "Abort",                  color: "var(--red)",    desc: "Discard all changes" },
   ];
 
   return (
-    <Card style={{ border:"1px solid var(--accent)50", animation:"glow 2s ease-in-out infinite" }}>
-      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:18 }}>
-        <div style={{
-          width:36, height:36, borderRadius:8, display:"flex", alignItems:"center",
-          justifyContent:"center", fontSize:18,
-          background:"linear-gradient(135deg, var(--accent), var(--purple))",
-        }}>👤</div>
-        <div>
-          <div style={{ fontWeight:700, fontSize:15, color:"var(--text)" }}>Human Review Required</div>
-          <div style={{ fontSize:12, color:"var(--muted)" }}>Your decision controls what happens next</div>
+    <Section kicker="review" title="human review required">
+      <Card accent="var(--accent)">
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: "var(--radius-md)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "linear-gradient(135deg, var(--accent), var(--purple))",
+            color: "#fff", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 12,
+          }}>HI</div>
+          <div>
+            <Kicker>your decision controls what happens next</Kicker>
+          </div>
         </div>
-      </div>
 
-      {/* Decision selector */}
-      <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:16 }}>
-        {decisions.map(d => (
-          <label key={d.value} style={{
-            display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
-            borderRadius:8, cursor:"pointer",
-            background: decision===d.value ? d.color+"15" : "var(--bg)",
-            border: `1px solid ${decision===d.value ? d.color+"60" : "var(--border)"}`,
-            transition:"all .15s",
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 14 }}>
+          {decisions.map(d => {
+            const active = decision === d.value;
+            return (
+              <label key={d.value} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "8px 12px", borderRadius: "var(--radius-md)",
+                cursor: "pointer",
+                background: active ? `color-mix(in srgb, ${d.color} 10%, var(--bg-sunken))` : "var(--bg-sunken)",
+                border: `1px solid ${active ? d.color : "var(--line)"}`,
+                transition: "all 120ms",
+              }}>
+                <input type="radio" name="decision" value={d.value}
+                  checked={active} onChange={e => setDecision(e.target.value)}
+                  style={{ accentColor: d.color }} />
+                <span style={{
+                  fontFamily: "var(--mono)", fontSize: 12, fontWeight: active ? 700 : 500,
+                  color: active ? d.color : "var(--ink)", minWidth: 180,
+                }}>{d.label}</span>
+                <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: "auto" }}>{d.desc}</span>
+              </label>
+            );
+          })}
+        </div>
+
+        {decision === "approve_with_notes" && (
+          <div className="slide-in" style={{ marginBottom: 10 }}>
+            <Textarea label="notes for pr description" value={notes} onChange={setNotes}
+              placeholder="These notes will be added to the PR body…" minHeight={80} mono={false} />
+          </div>
+        )}
+        {decision === "revise_plan" && (
+          <div className="slide-in" style={{ marginBottom: 10 }}>
+            <Textarea label="instructions for the judge" value={planNotes} onChange={setPlanNotes}
+              placeholder="Describe what should change in the plan…" minHeight={100} mono={false} />
+          </div>
+        )}
+        {decision === "revise_implementation" && (
+          <div className="slide-in" style={{ marginBottom: 10 }}>
+            <Textarea label="instructions for claude code" value={implNotes} onChange={setImplNotes}
+              placeholder="Describe what should change in the implementation…" minHeight={100} mono={false} />
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginTop: 4 }}>
+          <div style={{ flex: 1 }}>
+            <Field label="your name / @handle" value={reviewer} onChange={setReviewer}
+              placeholder="@you" />
+          </div>
+          <button onClick={submit} disabled={submitting} style={{
+            ...(decision === "abort" ? dangerBtn : accentBtn),
+            padding: "7px 18px",
+            background: decision === "abort" ? "var(--red)" : "var(--accent)",
+            color: "#fff", borderColor: decision === "abort" ? "var(--red)" : "var(--accent)",
+            opacity: submitting ? 0.6 : 1,
+            cursor: submitting ? "wait" : "pointer",
           }}>
-            <input type="radio" name="decision" value={d.value}
-              checked={decision===d.value} onChange={e => setDecision(e.target.value)}
-              style={{ accentColor: d.color }} />
-            <span style={{ color: decision===d.value ? d.color : "var(--text)", fontWeight:decision===d.value?700:400 }}>
-              {d.label}
-            </span>
-            <span style={{ color:"var(--muted)", fontSize:12, marginLeft:"auto" }}>{d.desc}</span>
-          </label>
-        ))}
-      </div>
-
-      {/* Conditional text areas */}
-      {decision==="approve_with_notes" && (
-        <div className="slide-in" style={{ marginBottom:12 }}>
-          <div style={{ fontSize:12, color:"var(--muted)", marginBottom:6 }}>Notes for PR description:</div>
-          <textarea value={notes} onChange={e=>setNotes(e.target.value)}
-            placeholder="These notes will be added to the PR body…"
-            style={{ width:"100%", minHeight:80, background:"var(--bg)", border:"1px solid var(--border)",
-              borderRadius:8, color:"var(--text)", padding:"10px 12px", fontSize:13, resize:"vertical",
-              outline:"none", fontFamily:"inherit" }} />
+            {submitting ? "Submitting…" : decision === "abort" ? "Abort" : "Submit Decision"}
+          </button>
         </div>
-      )}
-      {decision==="revise_plan" && (
-        <div className="slide-in" style={{ marginBottom:12 }}>
-          <div style={{ fontSize:12, color:"var(--muted)", marginBottom:6 }}>Instructions for the judge:</div>
-          <textarea value={planNotes} onChange={e=>setPlanNotes(e.target.value)}
-            placeholder="Describe what should change in the plan…"
-            style={{ width:"100%", minHeight:100, background:"var(--bg)", border:"1px solid var(--border)",
-              borderRadius:8, color:"var(--text)", padding:"10px 12px", fontSize:13, resize:"vertical",
-              outline:"none", fontFamily:"inherit" }} />
-        </div>
-      )}
-      {decision==="revise_implementation" && (
-        <div className="slide-in" style={{ marginBottom:12 }}>
-          <div style={{ fontSize:12, color:"var(--muted)", marginBottom:6 }}>Instructions for Claude Code:</div>
-          <textarea value={implNotes} onChange={e=>setImplNotes(e.target.value)}
-            placeholder="Describe what should change in the implementation…"
-            style={{ width:"100%", minHeight:100, background:"var(--bg)", border:"1px solid var(--border)",
-              borderRadius:8, color:"var(--text)", padding:"10px 12px", fontSize:13, resize:"vertical",
-              outline:"none", fontFamily:"inherit" }} />
-        </div>
-      )}
-
-      {/* Reviewer + Submit */}
-      <div style={{ display:"flex", gap:10, alignItems:"center", marginTop:4 }}>
-        <input value={reviewer} onChange={e=>setReviewer(e.target.value)}
-          placeholder="Your name / @handle"
-          style={{ flex:1, background:"var(--bg)", border:"1px solid var(--border)", borderRadius:8,
-            color:"var(--text)", padding:"9px 12px", fontSize:13, outline:"none", fontFamily:"inherit" }} />
-        <button onClick={submit} disabled={submitting} style={{
-          padding:"9px 24px", borderRadius:8, border:"none", cursor:submitting?"wait":"pointer",
-          fontWeight:700, fontSize:13, fontFamily:"inherit",
-          background: decision==="abort"
-            ? "var(--red)"
-            : "linear-gradient(135deg, var(--accent), var(--purple))",
-          color:"#fff", opacity: submitting ? 0.6 : 1,
-        }}>
-          {submitting ? "Submitting…" : decision==="abort" ? "Abort" : "Submit Decision"}
-        </button>
-      </div>
-    </Card>
+      </Card>
+    </Section>
   );
 }
 
-// ─── Activity Log ─────────────────────────────────────────────────────────────
-
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* ACTIVITY LOG — terminal-styled                                         */
+/* ═══════════════════════════════════════════════════════════════════════ */
 function ActivityLog({ logs }) {
   const ref = useRef(null);
   useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [logs]);
   if (!logs?.length) return null;
 
   return (
-    <Card>
-      <div style={{ fontWeight:700, fontSize:12, color:"var(--muted)", textTransform:"uppercase",
-        letterSpacing:"0.08em", marginBottom:10 }}>Activity Log</div>
-      <div ref={ref} style={{ maxHeight:180, overflowY:"auto", display:"flex", flexDirection:"column", gap:3 }}>
-        {logs.slice(-50).map((entry, i) => (
-          <div key={i} style={{ display:"flex", gap:8, fontSize:11.5, fontFamily:"monospace" }}>
-            <span style={{ color:"var(--muted)", flexShrink:0 }}>
-              {new Date(entry.ts).toLocaleTimeString()}
-            </span>
-            <span style={{
-              color: entry.level==="error" ? "var(--red)" : entry.level==="warn" ? "var(--yellow)" : "var(--muted)"
-            }}>{entry.msg}</span>
-          </div>
-        ))}
+    <Section kicker="log" title="activity">
+      <div style={{
+        background: "var(--term-bg)", border: "1px solid var(--line)",
+        borderRadius: "var(--radius-lg)", padding: "12px 14px",
+        fontFamily: "var(--mono)", fontSize: 11.5, lineHeight: 1.65,
+      }}>
+        <div ref={ref} style={{
+          maxHeight: 200, overflowY: "auto",
+          display: "flex", flexDirection: "column", gap: 2,
+        }}>
+          {logs.slice(-50).map((entry, i) => {
+            const color = entry.level === "error" ? "var(--term-red)"
+                       : entry.level === "warn"  ? "var(--term-str)"
+                                                : "var(--term-text)";
+            return (
+              <div key={i} style={{ display: "flex", gap: 10 }}>
+                <span style={{ color: "var(--term-dim)", flexShrink: 0 }}>
+                  {new Date(entry.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                </span>
+                <span style={{ color, flex: 1, wordBreak: "break-word" }}>{entry.msg}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </Card>
+    </Section>
   );
 }
 
-// ─── PR Banner ────────────────────────────────────────────────────────────────
-
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* PR BANNER                                                              */
+/* ═══════════════════════════════════════════════════════════════════════ */
 function PRBanner({ url }) {
   if (!url || url.startsWith("manual:")) return null;
   return (
-    <Card style={{ border:"1px solid var(--green)40", background:"#22c55e08", textAlign:"center" }}>
-      <div style={{ fontSize:28, marginBottom:8 }}>🎉</div>
-      <div style={{ fontWeight:700, fontSize:16, color:"var(--green)", marginBottom:6 }}>Pull Request Created</div>
-      <a href={url} target="_blank" rel="noopener" style={{
-        color:"var(--accent)", fontSize:13, wordBreak:"break-all",
-      }}>{url}</a>
-    </Card>
+    <Section kicker="ship" title="pull request created">
+      <Card accent="color-mix(in srgb, var(--green) 40%, transparent)"
+        style={{ background: "color-mix(in srgb, var(--green) 6%, var(--bg-elevated))", textAlign: "center" }}>
+        <div style={{ marginBottom: 8, display: "flex", justifyContent: "center" }}>
+          <StatusChip status="done" />
+        </div>
+        <a href={url} target="_blank" rel="noopener" style={{
+          fontFamily: "var(--mono)", fontSize: 12.5, color: "var(--accent)",
+          wordBreak: "break-all", textDecoration: "none",
+        }}>{url}</a>
+      </Card>
+    </Section>
   );
 }
 
-// ─── Config Editor ────────────────────────────────────────────────────────────
-
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* CONFIG EDITOR                                                          */
+/* ═══════════════════════════════════════════════════════════════════════ */
 const VALID_TOOLS = ["claude", "opencode", "pi"];
 
-function ConfigEditor({ onDone }) {
+function ConfigEditor({ onDone, readOnly }) {
   const { config, setConfig, loading, saving, error, saved, save } = useConfig();
 
   if (loading || !config) return (
-    <div style={{ height:"100%", display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <Spinner size={32} />
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <Spinner size={28} />
     </div>
   );
+
+  const activeCount = config.panelists.filter((p) => p.active !== false).length;
+  const totalPanelists = config.panelists.length;
 
   const updateAgent = (section, index, field, value) => {
     setConfig(prev => {
       const next = structuredClone(prev);
-      if (section === "panelists") {
-        next.panelists[index][field] = value;
-      } else {
-        next[section][field] = value;
-      }
+      if (section === "panelists") next.panelists[index][field] = value;
+      else                        next[section][field] = value;
       return next;
     });
   };
@@ -729,97 +1236,121 @@ function ConfigEditor({ onDone }) {
       ...prev,
       panelists: [...prev.panelists, {
         id: `panelist-${Date.now()}`,
-        label: "New Panelist",
-        icon: "🤖",
-        tool: "claude",
-        model: "",
-        promptMode: "file",
-        promptFile: "./prompts/new.md",
-        systemPrompt: "",
+        label: "New Panelist", icon: "🤖",
+        tool: "claude", model: "",
+        promptMode: "file", promptFile: "./prompts/new.md", systemPrompt: "",
+        // New panelists default to active (per design decision).
+        active: true,
       }],
     }));
   };
 
   const removePanelist = (index) => {
-    setConfig(prev => ({
-      ...prev,
-      panelists: prev.panelists.filter((_, i) => i !== index),
-    }));
+    if (!confirm("Remove this panelist? The config file will be updated on save.")) return;
+    setConfig(prev => ({ ...prev, panelists: prev.panelists.filter((_, i) => i !== index) }));
   };
 
   const updateForge = (field, value) =>
     setConfig(prev => ({ ...prev, forge: { ...prev.forge, [field]: value } }));
-
   const updateEval = (field, value) =>
     setConfig(prev => ({ ...prev, evaluation: { ...prev.evaluation, [field]: value } }));
 
   const handleSave = () => save(config);
 
   return (
-    <div style={{ flex:1, overflowY:"auto", padding:"24px 28px", display:"flex", flexDirection:"column", gap:20 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div>
-          <div style={{ fontWeight:700, fontSize:18, color:"var(--text)", marginBottom:4 }}>Agent Configuration</div>
-          <div style={{ fontSize:12, color:"var(--muted)" }}>Changes are saved to config/panelists.json and take effect on the next run.</div>
-        </div>
-        <div style={{ display:"flex", gap:10 }}>
-          <button onClick={onDone} style={secondaryBtn}>← Back to Dashboard</button>
-          <button onClick={handleSave} disabled={saving} style={primaryBtn}>
-            {saving ? "Saving…" : saved ? "Saved ✓" : "Save Config"}
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <Card style={{ border:"1px solid var(--red)40", background:"#ef444408" }}>
-          <div style={{ color:"var(--red)", fontSize:13 }}>⚠ {error}</div>
+    <div style={{
+      flex: 1, overflowY: "auto", padding: "24px 28px",
+      display: "flex", flexDirection: "column", gap: 20, maxWidth: 960, width: "100%", margin: "0 auto",
+    }}>
+      {readOnly && (
+        <Card accent="var(--yellow)"
+          style={{ background: "color-mix(in srgb, var(--yellow) 6%, var(--bg-elevated))" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, color: "var(--ink)" }}>
+            <span style={{ fontSize: 16, lineHeight: 1, color: "var(--yellow)" }}>🔒</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: "var(--ink)" }}>
+                Config is locked while a run is in progress
+              </div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                Cancel the run (or wait for it to finish) to make changes.
+              </div>
+            </div>
+          </div>
         </Card>
       )}
 
-      <Card>
-        <div style={{ fontWeight:700, fontSize:13, color:"var(--text)", marginBottom:14 }}>Panelists</div>
-        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+      <Section kicker={`config${readOnly ? " · read-only" : ""}`} title="agent configuration"
+        action={<div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onDone} style={secondaryBtn}>← back to dashboard</button>
+          <button onClick={handleSave} disabled={saving || readOnly} style={primaryBtn}>
+            {saving ? "Saving…" : saved ? "Saved ✓" : "Save Config"}
+          </button>
+        </div>}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>
+          Changes are saved to <code style={{ fontFamily: "var(--mono)" }}>config/panelists.json</code> and take effect on the next run.
+        </div>
+      </Section>
+
+      {error && (
+        <Card accent="color-mix(in srgb, var(--red) 40%, transparent)"
+          style={{ background: "color-mix(in srgb, var(--red) 6%, var(--bg-elevated))" }}>
+          <div style={{ color: "var(--red)", fontSize: 13, display: "flex", gap: 8 }}>
+            <span>⚠</span><span>{error}</span>
+          </div>
+        </Card>
+      )}
+
+      <Section kicker={`panelists${readOnly ? " · read-only" : ""}`}
+               title={`${totalPanelists} configured`}
+        action={
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{
+              fontFamily: "var(--mono)", fontSize: 11,
+              color: activeCount < 2 ? "var(--red)" : "var(--muted-2)",
+            }}>
+              {totalPanelists} configured · {activeCount} active
+              {activeCount < 2 && " · need ≥ 2 to run"}
+            </span>
+            {!readOnly && <button onClick={addPanelist} style={secondaryBtn}>+ add panelist</button>}
+          </div>
+        }>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {config.panelists.map((p, i) => (
-            <AgentForm
-              key={p.id}
-              agent={p}
-              showId
+            <AgentForm key={p.id} agent={p} showId
+              readOnly={readOnly}
+              activeCount={activeCount}
               onChange={(field, value) => updateAgent("panelists", i, field, value)}
-              onRemove={() => removePanelist(i)}
-            />
+              onRemove={() => removePanelist(i)} />
           ))}
         </div>
-        <button onClick={addPanelist} style={{ ...secondaryBtn, marginTop:14 }}>+ Add Panelist</button>
-      </Card>
+      </Section>
 
-      <Card>
-        <div style={{ fontWeight:700, fontSize:13, color:"var(--text)", marginBottom:14 }}>Judge</div>
+      <Section kicker="judge" title="synthesis agent">
         <AgentForm agent={config.judge} onChange={(field, value) => updateAgent("judge", 0, field, value)} />
-      </Card>
+      </Section>
 
-      <Card>
-        <div style={{ fontWeight:700, fontSize:13, color:"var(--text)", marginBottom:14 }}>Validator</div>
+      <Section kicker="validator" title="verification agent">
         <AgentForm agent={config.validator} onChange={(field, value) => updateAgent("validator", 0, field, value)} />
-      </Card>
+      </Section>
 
-      <Card>
-        <div style={{ fontWeight:700, fontSize:13, color:"var(--text)", marginBottom:4 }}>Pull Request / Merge Request</div>
-        <div style={{ fontSize:12, color:"var(--muted)", marginBottom:14 }}>
+      <Section kicker="forge" title="pull request / merge request"
+        action={<Badge color="var(--muted)">optional</Badge>}>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
           Where to open the PR/MR. Uses the platform CLI if installed, else the REST API with a token from the env var below.
         </div>
         <ForgeForm forge={config.forge} onChange={updateForge} />
-      </Card>
+      </Section>
 
-      <Card>
-        <div style={{ fontWeight:700, fontSize:13, color:"var(--text)", marginBottom:4 }}>Evaluation (build / test / run)</div>
-        <div style={{ fontSize:12, color:"var(--muted)", marginBottom:14 }}>
+      <Section kicker="evaluation" title="build · test · run"
+        action={<Badge color="var(--yellow)">executes agent code</Badge>}>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
           Optional. Runs these commands in the implementation worktree to verify the change actually works; a build/test failure blocks PASS.
-          ⚠ Executes agent-generated code — enable only inside the Docker sandbox.
+          ⚠ Enable only inside the Docker sandbox.
         </div>
         <EvalForm evaluation={config.evaluation} onChange={updateEval} />
-      </Card>
+      </Section>
 
-      <div style={{ height:20 }} />
+      <div style={{ height: 20 }} />
     </div>
   );
 }
@@ -828,245 +1359,243 @@ function EvalForm({ evaluation, onChange }) {
   const ev = evaluation ?? {};
   const enabled = ev.enabled === true;
   return (
-    <div style={{ background:"var(--bg)", border:"1px solid var(--border)", borderRadius:10, padding:14 }}>
-      <label style={{ display:"flex", alignItems:"center", gap:8, color:"var(--text)", fontSize:13, cursor:"pointer", marginBottom:12 }}>
+    <Card>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--ink)", fontSize: 13, cursor: "pointer", marginBottom: enabled ? 12 : 0 }}>
         <input type="checkbox" checked={enabled} onChange={e => onChange("enabled", e.target.checked)} />
-        Enable evaluation
+        <span>Enable evaluation</span>
       </label>
       {enabled && (
-        <>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:12, marginBottom:12 }}>
-            <Field label="Install" value={ev.install} onChange={v => onChange("install", v)} placeholder="bun install" />
-            <Field label="Build" value={ev.build} onChange={v => onChange("build", v)} placeholder="bun run build" />
-            <Field label="Test" value={ev.test} onChange={v => onChange("test", v)} placeholder="bun test" />
-            <Field label="Run (smoke)" value={ev.run} onChange={v => onChange("run", v)} placeholder="(optional)" />
-            <Field label="Working dir" value={ev.cwd} onChange={v => onChange("cwd", v)} placeholder="(repo root)" />
-            <Field label="Per-command timeout (ms)" value={ev.timeoutMs} onChange={v => onChange("timeoutMs", v)} placeholder="300000" />
-          </div>
-        </>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+          <Field label="install" value={ev.install} onChange={v => onChange("install", v)} placeholder="bun install" mono />
+          <Field label="build"   value={ev.build}   onChange={v => onChange("build", v)}   placeholder="bun run build" mono />
+          <Field label="test"    value={ev.test}    onChange={v => onChange("test", v)}    placeholder="bun test" mono />
+          <Field label="run (smoke)" value={ev.run} onChange={v => onChange("run", v)}     placeholder="(optional)" mono />
+          <Field label="working dir"  value={ev.cwd} onChange={v => onChange("cwd", v)}    placeholder="(repo root)" mono />
+          <Field label="timeout (ms)" value={ev.timeoutMs} onChange={v => onChange("timeoutMs", v)} placeholder="300000" mono />
+        </div>
       )}
-    </div>
+    </Card>
   );
 }
 
 const FORGE_PROVIDERS = ["github", "gitlab", "gitea", "azure", "manual"];
-const FORGE_TOKEN_HINT = {
-  github: "GITHUB_TOKEN", gitlab: "GITLAB_TOKEN", gitea: "GITEA_TOKEN",
-  azure: "AZURE_DEVOPS_EXT_PAT", manual: "—",
-};
-const FORGE_REPO_HINT = {
-  github: "owner/name", gitlab: "group/project", gitea: "owner/name",
-  azure: "org/project/repository", manual: "—",
-};
+const FORGE_TOKEN_HINT = { github: "GITHUB_TOKEN", gitlab: "GITLAB_TOKEN", gitea: "GITEA_TOKEN", azure: "AZURE_DEVOPS_EXT_PAT", manual: "—" };
+const FORGE_REPO_HINT  = { github: "owner/name", gitlab: "group/project", gitea: "owner/name", azure: "org/project/repository", manual: "—" };
 
 function ForgeForm({ forge, onChange }) {
   const provider = forge.provider ?? "github";
   const isManual = provider === "manual";
   return (
-    <div style={{ background:"var(--bg)", border:"1px solid var(--border)", borderRadius:10, padding:14 }}>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:12, marginBottom:12 }}>
+    <Card>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 12 }}>
         <div>
-          <div style={{ fontSize:11, color:"var(--muted)", marginBottom:6 }}>Provider</div>
-          <select value={provider} onChange={e => onChange("provider", e.target.value)} style={inputStyle}>
+          <Kicker>provider</Kicker>
+          <select value={provider} onChange={e => onChange("provider", e.target.value)} style={{
+            marginTop: 6, width: "100%",
+            background: "var(--bg-elevated)", border: "1px solid var(--line)",
+            borderRadius: "var(--radius-md)", color: "var(--ink)",
+            padding: "7px 10px", fontSize: 13, fontFamily: "var(--body)",
+            outline: "none",
+          }}>
             {FORGE_PROVIDERS.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
-        <Field label={`Repo (${FORGE_REPO_HINT[provider]})`} value={forge.repo} onChange={v => onChange("repo", v)} placeholder={isManual ? "" : FORGE_REPO_HINT[provider]} />
-        <Field label="Git remote" value={forge.remote} onChange={v => onChange("remote", v)} placeholder="origin" />
+        <Field label={`repo (${FORGE_REPO_HINT[provider]})`}
+          value={forge.repo} onChange={v => onChange("repo", v)}
+          placeholder={isManual ? "" : FORGE_REPO_HINT[provider]} mono />
+        <Field label="git remote" value={forge.remote} onChange={v => onChange("remote", v)} placeholder="origin" mono />
       </div>
       {!isManual && (
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:12, marginBottom:12 }}>
-          <Field label="Base URL (self-hosted)" value={forge.baseUrl} onChange={v => onChange("baseUrl", v)} placeholder="auto" />
-          <Field label="Token env var" value={forge.tokenEnv} onChange={v => onChange("tokenEnv", v)} placeholder={FORGE_TOKEN_HINT[provider]} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 12 }}>
+          <Field label="base url (self-hosted)" value={forge.baseUrl} onChange={v => onChange("baseUrl", v)} placeholder="auto" mono />
+          <Field label="token env var" value={forge.tokenEnv} onChange={v => onChange("tokenEnv", v)} placeholder={FORGE_TOKEN_HINT[provider]} mono />
         </div>
       )}
       {!isManual && (
-        <label style={{ display:"flex", alignItems:"center", gap:8, color:"var(--text)", fontSize:13, cursor:"pointer" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--ink)", fontSize: 13, cursor: "pointer" }}>
           <input type="checkbox" checked={forge.cli !== false} onChange={e => onChange("cli", e.target.checked)} />
-          Use the platform CLI when available (falls back to REST API)
+          <span>Use the platform CLI when available (falls back to REST API)</span>
         </label>
       )}
       {isManual && (
-        <div style={{ fontSize:12, color:"var(--muted)" }}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>
           The branch is pushed and the PR body is written to a file with manual instructions — no PR is opened automatically.
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
-function AgentForm({ agent, showId, onChange, onRemove }) {
+function AgentForm({ agent, showId, onChange, onRemove, readOnly, activeCount }) {
+  const [uploadError, setUploadError] = useState(null);
+  const isActive = agent.active !== false;
+  // Visual de-emphasis for inactive panelists (per design decision).
+  // Pointer events stay on so the user can re-activate via the toggle pill.
+  const cardOpacity = isActive ? 1 : 0.55;
+
+  const uploadPrompt = async (file) => {
+    setUploadError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/config/prompt-file", {
+        method: "POST",
+        headers: authHeaders(),
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Upload failed");
+      onChange("promptFile", data.path);
+    } catch (e) {
+      setUploadError(String(e));
+      setTimeout(() => setUploadError(null), 4000);
+    }
+  };
+
+  const handleRemove = () => {
+    // Soft warning when removing would leave < 2 active.
+    if (isActive && typeof activeCount === "number") {
+      const remaining = activeCount - 1;
+      const msg = remaining >= 2
+        ? "Remove this panelist?"
+        : `Remove this panelist? After removal you'll have ${remaining} active — at least 2 are required to start a run.`;
+      if (!confirm(msg)) return;
+    } else {
+      if (!confirm("Remove this panelist?")) return;
+    }
+    onRemove();
+  };
+
+  const togglePill = (
+    <button
+      type="button"
+      onClick={() => !readOnly && onChange("active", !isActive)}
+      aria-label={isActive ? "Deactivate panelist" : "Activate panelist"}
+      aria-pressed={isActive}
+      disabled={readOnly}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 6,
+        padding: "3px 10px", borderRadius: "var(--radius-sm)",
+        background: (isActive ? "var(--green)" : "var(--muted)") + "14",
+        border: `1px solid ${(isActive ? "var(--green)" : "var(--muted)")}40`,
+        fontFamily: "var(--mono)", fontSize: 11, fontWeight: 600,
+        color: isActive ? "var(--green)" : "var(--muted)",
+        cursor: readOnly ? "default" : "pointer",
+        transition: "all 120ms", userSelect: "none",
+      }}
+    >
+      <span style={{ fontSize: 10 }}>{isActive ? "●" : "○"}</span>
+      {isActive ? "active" : "inactive"}
+    </button>
+  );
+
   return (
-    <div style={{
-      background:"var(--bg)", border:"1px solid var(--border)", borderRadius:10, padding:14,
-    }}>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:12, marginBottom:12 }}>
-        {showId && (
-          <Field label="ID" value={agent.id} onChange={v => onChange("id", v)} placeholder="security" />
-        )}
-        <Field label="Label" value={agent.label} onChange={v => onChange("label", v)} placeholder="Security Architect" />
-        <Field label="Icon" value={agent.icon} onChange={v => onChange("icon", v)} placeholder="🔐" />
-        <Field label="Model" value={agent.model} onChange={v => onChange("model", v)} placeholder="claude-opus-4-5" />
+    <Card style={{ opacity: cardOpacity, transition: "opacity 200ms" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
+          <span style={{ fontSize: 18 }}>{agent.icon}</span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{
+              fontWeight: 700, fontSize: 14, color: "var(--ink)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>{agent.label}</div>
+            {showId && (
+              <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--muted)" }}>id: {agent.id}</div>
+            )}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          {togglePill}
+          {onRemove && !readOnly && (
+            <button onClick={handleRemove} style={dangerBtn}>Remove</button>
+          )}
+        </div>
       </div>
 
-      <div style={{ display:"grid", gridTemplateColumns:"160px 1fr", gap:12, marginBottom:12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 12 }}>
+        {showId && (
+          <Field label="id" value={agent.id} onChange={v => onChange("id", v)} placeholder="security" mono />
+        )}
+        <Field label="label" value={agent.label} onChange={v => onChange("label", v)} placeholder="Security Architect" />
         <div>
-          <div style={{ fontSize:11, color:"var(--muted)", marginBottom:6 }}>Tool</div>
-          <select
-            value={agent.tool}
-            onChange={e => onChange("tool", e.target.value)}
-            style={inputStyle}
-          >
+          <Kicker>icon</Kicker>
+          <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
+            <input value={agent.icon ?? ""} onChange={e => onChange("icon", e.target.value)}
+              disabled={readOnly}
+              placeholder="🔐" aria-label="Icon"
+              style={{
+                flex: 1, minWidth: 0,
+                background: "var(--bg-elevated)", border: "1px solid var(--line)",
+                borderRadius: "var(--radius-md)", color: "var(--ink)",
+                padding: "7px 10px", fontSize: 16, outline: "none",
+                fontFamily: "var(--body)", textAlign: "center",
+                transition: "border-color 120ms, box-shadow 120ms",
+                opacity: readOnly ? 0.6 : 1,
+              }} />
+            {!readOnly && <EmojiPicker value={agent.icon} onChange={v => onChange("icon", v)} />}
+          </div>
+        </div>
+        <Field label="model" value={agent.model} onChange={v => onChange("model", v)} placeholder="claude-opus-4-5" mono />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 12, marginBottom: 12, alignItems: "end" }}>
+        <div>
+          <Kicker>tool</Kicker>
+          <select value={agent.tool} onChange={e => onChange("tool", e.target.value)}
+            disabled={readOnly}
+            style={{
+              marginTop: 6, width: "100%",
+              background: "var(--bg-elevated)", border: "1px solid var(--line)",
+              borderRadius: "var(--radius-md)", color: "var(--ink)",
+              padding: "7px 10px", fontSize: 13, fontFamily: "var(--mono)",
+              outline: "none", opacity: readOnly ? 0.6 : 1,
+            }}>
             {VALID_TOOLS.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         <div>
-          <div style={{ fontSize:11, color:"var(--muted)", marginBottom:6 }}>Prompt source</div>
-          <div style={{ display:"flex", gap:10 }}>
-            <label style={{ display:"flex", alignItems:"center", gap:6, color:"var(--text)", fontSize:13, cursor:"pointer" }}>
-              <input type="radio" checked={agent.promptMode === "file"} onChange={() => onChange("promptMode", "file")} />
-              Markdown file
-            </label>
-            <label style={{ display:"flex", alignItems:"center", gap:6, color:"var(--text)", fontSize:13, cursor:"pointer" }}>
-              <input type="radio" checked={agent.promptMode === "inline"} onChange={() => onChange("promptMode", "inline")} />
-              Inline
-            </label>
+          <Kicker>prompt source</Kicker>
+          <div style={{ marginTop: 6, pointerEvents: readOnly ? "none" : "auto", opacity: readOnly ? 0.6 : 1 }}>
+            <SegmentedControl value={agent.promptMode} onChange={v => onChange("promptMode", v)}
+              options={[
+                { value: "file",   label: "file"   },
+                { value: "inline", label: "inline" },
+              ]} />
           </div>
         </div>
       </div>
 
       {agent.promptMode === "file" ? (
-        <Field
-          label="Prompt file path"
-          value={agent.promptFile}
-          onChange={v => onChange("promptFile", v)}
-          placeholder="./prompts/security.md"
-        />
+        <div>
+          <Kicker>prompt file</Kicker>
+          <div style={{ marginTop: 6 }}>
+            <CommandCard prompt="path" value={agent.promptFile}
+              onChange={v => onChange("promptFile", v)}
+              onUpload={readOnly ? undefined : uploadPrompt} />
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted-2)", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>Path resolves relative to the config file's directory.</span>
+            {!readOnly && <><span>·</span><span>📂 to upload a new .md from disk.</span></>}
+          </div>
+          {uploadError && (
+            <div style={{
+              fontSize: 12, color: "var(--red)", marginTop: 6,
+              fontFamily: "var(--mono)",
+            }}>⚠ {uploadError}</div>
+          )}
+        </div>
       ) : (
-        <div>
-          <div style={{ fontSize:11, color:"var(--muted)", marginBottom:6 }}>System prompt</div>
-          <textarea
-            value={agent.systemPrompt}
-            onChange={e => onChange("systemPrompt", e.target.value)}
-            placeholder="Enter the system prompt here…"
-            style={{ ...inputStyle, minHeight:120, resize:"vertical" }}
-          />
-        </div>
+        <Textarea label="system prompt" value={agent.systemPrompt} onChange={v => onChange("systemPrompt", v)}
+          placeholder="You are a security reviewer. Focus on: …" minHeight={140} />
       )}
-
-      {onRemove && (
-        <button onClick={onRemove} style={{ ...dangerBtn, marginTop:12 }}>Remove panelist</button>
-      )}
-    </div>
+    </Card>
   );
 }
 
-function Field({ label, value, onChange, placeholder }) {
-  return (
-    <div>
-      <div style={{ fontSize:11, color:"var(--muted)", marginBottom:6 }}>{label}</div>
-      <input
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        style={inputStyle}
-      />
-    </div>
-  );
-}
-
-const inputStyle = {
-  width:"100%", background:"var(--surface)", border:"1px solid var(--border)",
-  borderRadius:6, color:"var(--text)", padding:"8px 10px", fontSize:13,
-  outline:"none", fontFamily:"inherit",
-};
-
-const btnBase = {
-  padding:"8px 16px", borderRadius:8, border:"none", cursor:"pointer",
-  fontWeight:700, fontSize:13, fontFamily:"inherit",
-};
-
-const primaryBtn = {
-  ...btnBase,
-  background:"linear-gradient(135deg, var(--accent), var(--purple))",
-  color:"#fff",
-};
-
-const secondaryBtn = {
-  ...btnBase,
-  background:"var(--surface)", color:"var(--text)", border:"1px solid var(--border)",
-};
-
-const dangerBtn = {
-  ...btnBase,
-  background:"transparent", color:"var(--red)", border:"1px solid var(--red)40",
-};
-
-// ─── Header ───────────────────────────────────────────────────────────────────
-
-function Header({ state, connected, view, setView }) {
-  return (
-    <div style={{
-      padding:"16px 28px", borderBottom:"1px solid var(--border)",
-      background:"var(--surface)", display:"flex", alignItems:"center",
-      justifyContent:"space-between", flexShrink:0,
-    }}>
-      <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-        <div style={{
-          width:32, height:32, borderRadius:8, display:"flex", alignItems:"center",
-          justifyContent:"center", fontSize:17,
-          background:"linear-gradient(135deg, var(--accent), var(--purple))",
-        }}>⚖️</div>
-        <div>
-          <div style={{ fontWeight:700, fontSize:15, color:"var(--text)" }}>Perspective Council</div>
-          {state && <div style={{ fontSize:11, color:"var(--muted)" }}>
-            Run {state.runId} · {state.repoPath?.split("/").slice(-2).join("/")} · {state.branch}
-          </div>}
-        </div>
-      </div>
-      <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-        <div style={{ display:"flex", gap:6 }}>
-          <button
-            onClick={() => setView("dashboard")}
-            style={view === "dashboard" ? navBtnActive : navBtn}
-          >Dashboard</button>
-          <button
-            onClick={() => setView("newrun")}
-            style={view === "newrun" ? navBtnActive : navBtn}
-          >New Run</button>
-          <button
-            onClick={() => setView("config")}
-            style={view === "config" ? navBtnActive : navBtn}
-          >Config</button>
-        </div>
-        <div style={{ width:1, height:20, background:"var(--border)" }} />
-        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <div style={{
-            width:7, height:7, borderRadius:"50%",
-            background: connected ? "var(--green)" : "var(--red)",
-            boxShadow: connected ? "0 0 6px var(--green)" : "none",
-          }} />
-          <span style={{ fontSize:11, color:"var(--muted)" }}>{connected ? "Live" : "Reconnecting…"}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const navBtn = {
-  padding:"6px 12px", borderRadius:6, border:"1px solid transparent",
-  background:"transparent", color:"var(--muted)", fontSize:12,
-  cursor:"pointer", fontFamily:"inherit", fontWeight:600,
-};
-
-const navBtnActive = {
-  ...navBtn,
-  background:"var(--accent)20", color:"var(--accent)", border:"1px solid var(--accent)40",
-};
-
-// ─── New Run launcher ───────────────────────────────────────────────────────
-
-function NewRunForm({ onStarted, onBack, runActive }) {
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* NEW RUN                                                                */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function NewRunForm({ onStarted, onBack, runActive, onOpenConfig, view }) {
   const [mode, setMode] = useState("maintenance");
   const [repoPath, setRepoPath] = useState("");
   const [branch, setBranch] = useState("main");
@@ -1074,10 +1603,33 @@ function NewRunForm({ onStarted, onBack, runActive }) {
   const [specPath, setSpecPath] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [activeCount, setActiveCount] = useState(null);   // null = still loading
 
   const greenfield = mode === "greenfield";
 
+  // Fetch the config to learn the active panelist count. The server
+  // already enforces the >= 2 rule on /api/run; this is the early-warning
+  // UI so the user doesn't have to fill out the form first.
+  // Re-fires when the user navigates to the "new run" tab (via the `view`
+  // prop) so changes saved from the Config tab are picked up immediately.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/config", { headers: authHeaders() })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (cancelled || !data?.panelists) return;
+        const n = data.panelists.filter((p) => p.active !== false).length;
+        setActiveCount(n);
+      })
+      .catch(() => { /* ignore — server will catch it on submit */ });
+    return () => { cancelled = true; };
+  }, [view]);
+
   const submit = async () => {
+    if (activeCount !== null && activeCount < 2) {
+      setError(`At least 2 panelists must be active (currently ${activeCount}). Open the Config tab to enable more.`);
+      return;
+    }
     if (!repoPath.trim()) { setError(greenfield ? "Target directory is required" : "Repository path is required"); return; }
     if (!context.trim()) { setError(greenfield ? "Idea / spec is required" : "Goal is required"); return; }
     setSubmitting(true); setError(null);
@@ -1100,57 +1652,88 @@ function NewRunForm({ onStarted, onBack, runActive }) {
     finally { setSubmitting(false); }
   };
 
-  const modeBtn = (m, label) => (
-    <button onClick={() => setMode(m)} style={mode === m ? navBtnActive : navBtn}>{label}</button>
-  );
-
   return (
-    <div style={{ flex:1, overflowY:"auto", padding:"24px 28px", display:"flex", justifyContent:"center" }}>
-      <div style={{ width:"100%", maxWidth:640, display:"flex", flexDirection:"column", gap:20 }}>
-        <div>
-          <div style={{ fontWeight:700, fontSize:18, color:"var(--text)", marginBottom:4 }}>Start a run</div>
-          <div style={{ fontSize:12, color:"var(--muted)" }}>Improve an existing repo, or build a new project from an idea.</div>
-        </div>
+    <div style={{ flex: 1, overflowY: "auto", padding: "32px 28px", display: "flex", justifyContent: "center" }}>
+      <div style={{ width: "100%", maxWidth: 640, display: "flex", flexDirection: "column", gap: 20 }}>
+        <Section kicker="start a run"
+                 title={greenfield ? "build a new project" : "review an existing repo"}>
+          <div style={{ fontSize: 12.5, color: "var(--muted)" }}>
+            {greenfield
+              ? "Bootstrap an empty directory, design the architecture, and ship working code."
+              : "Analyze the codebase from isolated worktrees and ship a prioritised fix plan."}
+          </div>
+        </Section>
 
         {runActive && (
-          <Card style={{ border:"1px solid var(--accent)40", background:"var(--accent)08" }}>
-            <div style={{ color:"var(--accent)", fontSize:13 }}>A run is currently active — starting a new one will be rejected until it finishes.</div>
+          <Card accent="var(--accent)">
+            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--accent)" }}>
+              <StatusChip status="running" />
+              <span style={{ fontSize: 13 }}>A run is currently active — starting a new one will be rejected until it finishes.</span>
+            </div>
+          </Card>
+        )}
+        {activeCount !== null && activeCount < 2 && (
+          <Card accent="var(--red)"
+            style={{ background: "color-mix(in srgb, var(--red) 6%, var(--bg-elevated))" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--red)" }}>
+              <span style={{ fontSize: 14 }}>⚠</span>
+              <span style={{ fontSize: 13 }}>
+                Only {activeCount} panelist{activeCount === 1 ? "" : "s"} active. You need at least 2 to start a run.
+                {onOpenConfig && (
+                  <> Open the <button type="button" onClick={onOpenConfig}
+                    style={{ background: "transparent", border: "none", color: "var(--accent)", cursor: "pointer", padding: 0, textDecoration: "underline", font: "inherit" }}>
+                    config tab
+                  </button> to enable more.</>
+                )}
+              </span>
+            </div>
           </Card>
         )}
         {error && (
-          <Card style={{ border:"1px solid var(--red)40", background:"#ef444408" }}>
-            <div style={{ color:"var(--red)", fontSize:13 }}>⚠ {error}</div>
+          <Card accent="var(--red)"
+            style={{ background: "color-mix(in srgb, var(--red) 6%, var(--bg-elevated))" }}>
+            <div style={{ color: "var(--red)", fontSize: 13, display: "flex", gap: 8 }}>
+              <span>⚠</span><span>{error}</span>
+            </div>
           </Card>
         )}
 
         <Card>
-          <div style={{ display:"flex", gap:6, marginBottom:16 }}>
-            {modeBtn("maintenance", "🔧 Existing repo")}
-            {modeBtn("greenfield", "🌱 New project")}
+          <Kicker>mode</Kicker>
+          <div style={{ marginTop: 6 }}>
+            <SegmentedControl value={mode} onChange={setMode}
+              options={[
+                { value: "maintenance", label: "🔧 existing repo" },
+                { value: "greenfield",  label: "🌱 new project"   },
+              ]} />
           </div>
 
-          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-            <Field
-              label={greenfield ? "Target directory" : "Repository path"}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}>
+            <Field label={greenfield ? "target directory" : "repository path"}
               value={repoPath} onChange={setRepoPath}
               placeholder={greenfield ? "/path/to/new/project" : "/path/to/repo"}
-            />
-            <Field label="Branch" value={branch} onChange={setBranch} placeholder="main" />
-            <div>
-              <div style={{ fontSize:11, color:"var(--muted)", marginBottom:6 }}>{greenfield ? "Idea / spec" : "Goal / context"}</div>
-              <textarea
-                value={context} onChange={e => setContext(e.target.value)}
-                placeholder={greenfield ? "A Bun CLI that reverses stdin, with tests" : "Harden this API for production; focus on auth"}
-                style={{ ...inputStyle, minHeight:90, resize:"vertical" }}
-              />
-            </div>
+              mono />
+            <Field label="branch" value={branch} onChange={setBranch} placeholder="main" mono />
+            <Textarea label={greenfield ? "idea / spec" : "goal / context"}
+              value={context} onChange={setContext}
+              placeholder={greenfield
+                ? "A Bun CLI that reverses stdin, with tests"
+                : "Harden this API for production; focus on auth"}
+              minHeight={100} mono={false} />
             {greenfield && (
-              <Field label="Spec file path (optional)" value={specPath} onChange={setSpecPath} placeholder="./SPEC.md" />
+              <Field label="spec file (optional)" value={specPath} onChange={setSpecPath}
+                placeholder="./SPEC.md" mono />
             )}
           </div>
 
-          <div style={{ display:"flex", gap:10, marginTop:18 }}>
-            <button onClick={submit} disabled={submitting} style={primaryBtn}>
+          <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+            <button onClick={submit}
+              disabled={submitting || (activeCount !== null && activeCount < 2)}
+              title={activeCount !== null && activeCount < 2 ? "At least 2 panelists must be active" : ""}
+              style={{ ...accentBtn,
+                opacity: (activeCount !== null && activeCount < 2) ? 0.5 : 1,
+                cursor: (activeCount !== null && activeCount < 2) ? "not-allowed" : "pointer",
+              }}>
               {submitting ? "Starting…" : greenfield ? "🌱 Build project" : "🔧 Start review"}
             </button>
             {onBack && <button onClick={onBack} style={secondaryBtn}>Cancel</button>}
@@ -1161,86 +1744,182 @@ function NewRunForm({ onStarted, onBack, runActive }) {
   );
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* EMPTY DASHBOARD — fresh session, no run yet                            */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function EmptyDashboard({ onStartRun, onOpenConfig }) {
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "40px 28px", display: "flex", justifyContent: "center" }}>
+      <div style={{ width: "100%", maxWidth: 640, display: "flex", flexDirection: "column", gap: 20 }}>
+        <Section kicker="dashboard" title="no run yet">
+          <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.6 }}>
+            The council hasn't started a pipeline yet. Configure your agents
+            from the <span style={{ fontFamily: "var(--mono)", color: "var(--accent)" }}>config</span> tab —
+            then launch a run to see live panel analysis, a prioritised
+            implementation plan, and a draft pull request.
+          </div>
+        </Section>
 
+        <Card>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
+            <div style={{
+              fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)",
+              textTransform: "uppercase", letterSpacing: "0.08em",
+            }}>// suggested next step</div>
+            <div style={{ fontSize: 14, color: "var(--ink)" }}>
+              Start a new run to analyze a repo or scaffold a new project.
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button onClick={onStartRun} style={accentBtn}>+ start a run</button>
+              <button onClick={onOpenConfig} style={secondaryBtn}>configure agents</button>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <Kicker>how it works</Kicker>
+          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10, fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.55 }}>
+            <Step n="1" title="panel">Configured expert reviewers analyze the repo from isolated git worktrees.</Step>
+            <Step n="2" title="judge">A judge agent synthesizes the findings into a prioritised task plan.</Step>
+            <Step n="3" title="implement">Claude Code executes the plan in a clean worktree.</Step>
+            <Step n="4" title="validate">A validator checks the implementation against the plan.</Step>
+            <Step n="5" title="human">You review as the final gate; a pull request is opened.</Step>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function Step({ n, title, children }) {
+  return (
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+      <div style={{
+        width: 22, height: 22, borderRadius: "var(--radius-sm)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontFamily: "var(--mono)", fontSize: 10, fontWeight: 700,
+        background: "var(--bg-sunken)", color: "var(--accent)",
+        border: "1px solid var(--line)", flexShrink: 0, marginTop: 1,
+      }}>{n}</div>
+      <div style={{ flex: 1 }}>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginRight: 6 }}>{title}</span>
+        <span>{children}</span>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* APP                                                                    */
+/* ═══════════════════════════════════════════════════════════════════════ */
 function App() {
   const { state, connected } = useCouncil();
   const [view, setView] = useState("dashboard");
-
   const runActive = state && state.currentStage !== "done" && state.currentStage !== "aborted";
 
-  // No run yet, or the user chose "New Run" → show the launcher.
-  if (!state || view === "newrun") {
+  // Routing:
+  //   config  → ConfigEditor (always reachable, even with no state)
+  //   newrun  → NewRunForm (always reachable, even with no state)
+  //   dashboard + state    → live dashboard
+  //   dashboard + no state → empty dashboard (the "fresh session" view)
+  if (view === "config") {
     return (
-      <div style={{ height:"100%", display:"flex", flexDirection:"column" }}>
-        {state && <Header state={state} connected={connected} view={view} setView={setView} />}
+      <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <Header state={state} connected={connected} view={view} setView={setView} />
+        <ConfigEditor onDone={() => setView("dashboard")} readOnly={runActive} />
+      </div>
+    );
+  }
+
+  if (view === "newrun") {
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <Header state={state} connected={connected} view={view} setView={setView} />
         <NewRunForm
           onStarted={() => setView("dashboard")}
-          onBack={state ? () => setView("dashboard") : undefined}
+          onBack={() => setView("dashboard")}
+          onOpenConfig={() => setView("config")}
           runActive={runActive}
-        />
+          view={view} />
+      </div>
+    );
+  }
+
+  // view === "dashboard"
+  if (!state) {
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <Header state={state} connected={connected} view={view} setView={setView} />
+        <EmptyDashboard
+          onStartRun={() => setView("newrun")}
+          onOpenConfig={() => setView("config")} />
       </div>
     );
   }
 
   const isAborted = state.currentStage === "aborted";
+  const showEmpty = !state.panelists?.length && !state.tasks?.length && !state.validatorReport;
 
   return (
-    <div style={{ height:"100%", display:"flex", flexDirection:"column" }}>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <Header state={state} connected={connected} view={view} setView={setView} />
 
       {view === "config" ? (
-        <ConfigEditor onDone={() => setView("dashboard")} />
+        <ConfigEditor onDone={() => setView("dashboard")} readOnly={runActive} />
       ) : (
-      <div style={{ flex:1, overflowY:"auto", padding:"24px 28px", display:"flex", flexDirection:"column", gap:20 }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 20, maxWidth: 960, width: "100%", margin: "0 auto" }}>
 
-        {/* Stage pipeline */}
-        <Card>
-          <StagePipeline currentStage={isAborted ? "aborted" : state.currentStage} />
-          {isAborted && (
-            <div style={{ marginTop:12, color:"var(--red)", fontSize:13 }}>
-              ✗ Aborted: {state.error ?? "User requested abort"}
-            </div>
+          <Section kicker={`stage · ${STAGE_KICKER[state.currentStage] ?? state.currentStage}`}
+                   title={STAGE_LABEL[state.currentStage] ?? "Pipeline"}>
+            <Card glow={!isAborted && state.currentStage !== "done"}
+                  accent={isAborted ? "var(--red)" : undefined}>
+              <StagePipeline currentStage={isAborted ? "aborted" : state.currentStage} />
+              {isAborted && (
+                <div style={{ marginTop: 12, color: "var(--red)", fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
+                  <StatusChip status="error" />
+                  <span>Aborted: {state.error ?? "User requested abort"}</span>
+                </div>
+              )}
+              {state.currentStage === "done" && (
+                <div style={{ marginTop: 12, color: "var(--green)", fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
+                  <StatusChip status="done" />
+                  <span>Pipeline complete</span>
+                </div>
+              )}
+            </Card>
+            {state.iteration > 0 && (
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+                iteration {state.iteration} / {state.maxIterations}
+              </div>
+            )}
+          </Section>
+
+          {state.panelists?.length > 0 && (
+            <Section kicker="panel" title={`${state.panelists.length} reviewers`}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
+                {state.panelists.map(p => <PanelistCard key={p.id} panelist={p} />)}
+              </div>
+            </Section>
           )}
-        </Card>
 
-        {/* Iteration badge */}
-        {state.iteration > 0 && (
-          <div style={{ fontSize:12, color:"var(--muted)" }}>
-            Iteration {state.iteration} / {state.maxIterations}
-          </div>
-        )}
+          {state.tasks?.length > 0 && (
+            <TaskList tasks={state.tasks} plan={state.judgePlan} />
+          )}
 
-        {/* Panelists */}
-        {state.panelists?.length > 0 && (
-          <div>
-            <div style={{ fontSize:11, fontWeight:700, color:"var(--muted)", textTransform:"uppercase",
-              letterSpacing:"0.08em", marginBottom:10 }}>Panel</div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12 }}>
-              {state.panelists.map(p => <PanelistCard key={p.id} panelist={p} />)}
-            </div>
-          </div>
-        )}
+          {state.validatorReport && <ValidatorPanel report={state.validatorReport} />}
+          <HILPanel state={state} />
+          <PRBanner url={state.prUrl} />
+          <ActivityLog logs={state.logs} />
 
-        {/* Tasks */}
-        {state.tasks?.length > 0 && (
-          <TaskList tasks={state.tasks} plan={state.judgePlan} />
-        )}
+          {showEmpty && !isAborted && state.currentStage !== "done" && (
+            <div style={{
+              fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted-2)",
+              textAlign: "center", padding: "40px 0",
+            }}>// waiting for pipeline events…</div>
+          )}
 
-        {/* Validator */}
-        {state.validatorReport && <ValidatorPanel report={state.validatorReport} />}
-
-        {/* HIL */}
-        <HILPanel state={state} />
-
-        {/* PR */}
-        <PRBanner url={state.prUrl} />
-
-        {/* Log */}
-        <ActivityLog logs={state.logs} />
-
-        <div style={{ height:20 }} />
-      </div>
+          <div style={{ height: 20 }} />
+        </div>
       )}
     </div>
   );

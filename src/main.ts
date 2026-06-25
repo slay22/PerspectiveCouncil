@@ -93,9 +93,17 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
     }
 
     const { panelists, judge, validator, forge, evaluation } = council;
-    store.log("info", `Mode: ${mode}`);
-    if (evaluation?.enabled) {
-      store.log("warn", "Evaluation enabled — build/test/run commands will execute agent-generated code. Use the Docker sandbox.");
+
+    // Filter out inactive panelists. Inactive ones are kept in
+    // config/panelists.json so the user can re-enable them, but they
+    // don't get a worktree, don't run, and don't show in the live UI.
+    // The cast is needed because CouncilConfig's Zod-inferred PanelistConfig
+    // and the runtime PanelistConfig (with worktreePath) are distinct types.
+    const activePanelists = panelists.filter((p) => p.active !== false) as Array<typeof panelists[number]>;
+    for (const p of panelists) {
+      if (p.active === false) {
+        store.log("info", `Skipping inactive panelist: ${p.label} (${p.id})`);
+      }
     }
 
     store.init({
@@ -104,10 +112,15 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
       branch:         config.branch,
       projectContext: config.projectContext,
       maxIterations:  maxIter,
-      panelists:      panelists.map((p) => ({
+      panelists:      activePanelists.map((p) => ({
         id: p.id, label: p.label, icon: p.icon ?? "🤖", model: p.model ?? p.tool,
       })),
     });
+
+    store.log("info", `Mode: ${mode}`);
+    if (evaluation?.enabled) {
+      store.log("warn", "Evaluation enabled — build/test/run commands will execute agent-generated code. Use the Docker sandbox.");
+    }
 
     const run: PipelineRun = {
       id: runId, repoPath: config.repoPath, branch: config.branch,
@@ -122,7 +135,7 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
         await bootstrapGreenfield(config.repoPath, config.branch);
       }
       store.log("info", "Creating git worktrees…");
-      await createWorktrees(config.repoPath, config.branch, panelists);
+      await createWorktrees(config.repoPath, config.branch, activePanelists);
       await createImplementorWorktree(config.repoPath, config.branch, implPath, runId);
       store.emit_({ type: "worktrees_ready", ts: Date.now() });
 
@@ -131,7 +144,7 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
       const specText = mode === "greenfield"
         ? await loadSpec(config.specPath, config.projectContext)
         : undefined;
-      const panelResults = await runPanel(panelists, { specText });
+      const panelResults = await runPanel(activePanelists, { specText });
       run.panelResults = panelResults;
 
       // ── Plan → implement → validate → HIL loop ──────────────────────────────
@@ -281,12 +294,21 @@ async function cleanup(
 // ─── CLI ──────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const config = parseArgs();
+  const parsed = parseArgs();
+  if (parsed.configOnly) {
+    await boot(parsed.port);
+    console.log("  ℹ --config-only: GUI up. Use the New Run tab or POST /api/run to start a pipeline.");
+    await new Promise(() => {}); // keep alive for Telegram + GUI
+    return;
+  }
+  const { configOnly: _ignored, ...config } = parsed;
   await runPipeline(config);
   await new Promise(() => {}); // keep alive for Telegram + GUI
 }
 
-function parseArgs(): ConductorConfig {
+type CliResult = { configOnly: true; port: number } | ({ configOnly: false } & ConductorConfig);
+
+function parseArgs(): CliResult {
   const args = process.argv.slice(2);
   if (args.includes("--help") || args.length === 0) {
     console.log(`
@@ -294,14 +316,16 @@ Usage: bun run src/main.ts [options]
 
 Options:
   --repo <path>        Target directory: existing repo (maintenance) or where to
-                       create a new project (greenfield) (required)
+                       create a new project (greenfield) (required unless --config-only)
   --branch <name>      Branch to analyze / build on (default: main)
-  --context <text>     Project goal (maintenance) or the idea/spec (greenfield) (required)
+  --context <text>     Project goal (maintenance) or the idea/spec (greenfield) (required unless --config-only)
   --mode <m>           maintenance | greenfield (inferred from --repo/--spec if omitted)
   --spec <path>        Greenfield: path to a specification document (implies greenfield)
-  --port <n>           GUI port (default: 3000)
+  --port <n>           GUI port (default: 3000, or $COUNCIL_PORT)
   --max-iter <n>       Max iterations (default: 3)
   --config <path>      panelists.json to use (default: bundled config/panelists.json)
+  --config-only        Boot the GUI + Telegram without running a pipeline. Use the
+                       New Run tab (or POST /api/run) to start a run later.
 
 Modes:
   maintenance — analyze an existing repo and propose/implement fixes (default for a repo)
@@ -316,12 +340,24 @@ Environment variables:
   TELEGRAM_BOT_TOKEN       From @BotFather (optional)
   TELEGRAM_ALLOWED_CHATS   Comma-separated chat IDs (optional)
   COUNCIL_HOST             Bind address for the GUI/API (default: 127.0.0.1)
+  COUNCIL_PORT             GUI port when --port is not given (default: 3000)
   COUNCIL_API_TOKEN        Require a bearer token on config/HIL endpoints (optional)
 `);
     process.exit(0);
   }
 
   const get = (f: string) => { const i = args.indexOf(f); return i !== -1 ? args[i + 1] : undefined; };
+  const configOnly = args.includes("--config-only");
+  const portArg    = get("--port") ?? process.env.COUNCIL_PORT;
+  const port       = parseInt(portArg ?? "3000");
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    console.error(`--port must be a number 1-65535 (got: ${portArg})`);
+    process.exit(1);
+  }
+  if (configOnly) {
+    return { configOnly: true, port };
+  }
+
   const repo    = get("--repo");
   const context = get("--context");
   if (!repo)    { console.error("--repo is required");    process.exit(1); }
@@ -335,11 +371,12 @@ Environment variables:
   }
 
   return {
+    configOnly: false,
     repoPath:       path.resolve(repo!),
     branch:         get("--branch") ?? "main",
     projectContext: context!,
     maxIterations:  parseInt(get("--max-iter") ?? "3"),
-    port:           parseInt(get("--port") ?? "3000"),
+    port,
     ...(configPath ? { configPath: path.resolve(configPath) } : {}),
     ...(specPath   ? { specPath:   path.resolve(specPath) }   : {}),
     ...(modeArg    ? { mode: modeArg as PipelineMode }        : {}),

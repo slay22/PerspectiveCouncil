@@ -301,7 +301,26 @@ The editor supports adding/removing panelists, editing judge/validator settings,
 
 ---
 
+## Phase 5 — Active/Inactive Panelists ✅
+
+> Implemented. Each panelist can be toggled active/inactive. Inactive panelists stay in `panelists.json` but don't get a worktree, don't run, and don't appear on the live dashboard. At least **2 panelists must be active** to start a run; the form, the server's Zod schema, and the `POST /api/run` handler all enforce this. While a run is in flight, the Config tab is **read-only**.
+
+**Files:** `src/core/schemas.ts`, `config/panelists.ts`, `src/main.ts`, `src/server/server.ts`, `src/ui/index.html`, `tests/active-panelists.test.ts`.
+
+**Behavior summary:**
+
+- A panelist can be toggled with a clickable `● active` / `○ inactive` pill. Inactive cards are visually de-emphasised (`opacity: 0.55`) but stay interactive so they can be re-enabled.
+- The `# PANELISTS` section kicker shows `N configured · M active`; turns red with "need ≥ 2 to run" when the active count is < 2.
+- The "Remove" confirm message warns the user when removing would leave < 2 active.
+- The Config tab becomes read-only while a run is in flight (lock banner, disabled inputs, hidden Add/Remove/Picker/Upload). It unlocks when the run is `done` or `aborted`.
+- The New Run form shows a warning card and disables "Start review" when < 2 active. The warning's "config tab" link navigates back to the Config tab.
+- Inactive panelists are logged as skipped at run start: `Skipping inactive panelist: <label> (<id>)`.
+
+**Known limitation:** no in-UI "Cancel run" button — the user must cancel via the existing paths (Telegram `abort` decision, or killing the server process). Documented as a follow-up.
+
+---
+
 ## Tracking
 
 - Create one issue or PR per numbered item above.
-- Tag Phase 1 items as `P0`, Phase 2 as `P1`, Phase 3 as `P2`, Phase 4 as `future`.
+- Tag Phase 1 items as `P0`, Phase 2 as `P1`, Phase 3 as `P2`, Phase 4 as `future`, Phase 5 as `P1`.

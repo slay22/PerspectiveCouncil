@@ -4,7 +4,7 @@
 
 > Multi-agent code review and implementation orchestrator.
 
-Three expert AI panelists analyze your codebase from isolated git worktrees. A judge synthesizes their findings into a concrete, prioritized implementation plan. Claude Code executes the plan. A validator checks that the implementation matches the plan. You review as the final human gate, and a pull request is created with a full audit trail.
+Three expert AI panelists analyze your codebase from isolated git worktrees. A judge synthesizes their findings into a concrete, prioritized implementation plan. Claude Code executes the plan. A validator checks that the implementation matches the plan. You review as the final human gate, and a pull request is created with a full audit trail. Add as many panelists as you like and toggle any of them **active / inactive** from the Config tab — at least 2 must be active to start a run.
 
 ---
 
@@ -57,6 +57,13 @@ bun run src/main.ts \
 ```
 
 A browser UI opens automatically at `http://localhost:3000`. Use the **Config** tab to add, edit, or remove agents without touching JSON. You can also interact via Telegram if `TELEGRAM_BOT_TOKEN` is set.
+
+To open the GUI without launching a run (e.g. to configure panelists first), pass `--config-only`:
+
+```bash
+bun run src/main.ts --config-only --port 3000
+# then start a run later from the New Run tab or POST /api/run
+```
 
 To analyze a different project, point `--repo` at any git repo — the council runs from anywhere and never modifies the target's working tree (worktrees go to your temp dir). Use `--config <path>` to give a project its own `panelists.json` (its `promptFile` paths resolve relative to that file).
 

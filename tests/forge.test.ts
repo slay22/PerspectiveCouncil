@@ -103,7 +103,10 @@ describe("ForgeConfig schema", () => {
 
   it("is optional on the council config", () => {
     const base = {
-      panelists: [{ id: "s", label: "S", tool: "claude", systemPrompt: "x" }],
+      panelists: [
+        { id: "s", label: "S", tool: "claude", systemPrompt: "x" },
+        { id: "q", label: "Q", tool: "pi",     systemPrompt: "x" },
+      ],
       judge: { tool: "pi", label: "J", systemPrompt: "x" },
       validator: { tool: "claude", label: "V", systemPrompt: "x" },
     };

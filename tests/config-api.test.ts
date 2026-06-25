@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import * as fs from "fs";
-import { saveConfig, CONFIG_PATH } from "../config/panelists.ts";
+import { saveConfig, resolveConfigPath } from "../config/panelists.ts";
 import { handleGetConfig, handlePostConfig } from "../src/server/config-api.ts";
 
 describe("saveConfig", () => {
@@ -8,12 +8,12 @@ describe("saveConfig", () => {
   let cleanup = false;
 
   beforeEach(() => {
-    originalContent = fs.readFileSync(CONFIG_PATH, "utf-8");
+    originalContent = fs.readFileSync(resolveConfigPath(), "utf-8");
   });
 
   afterEach(() => {
     if (cleanup) {
-      fs.writeFileSync(CONFIG_PATH, originalContent, "utf-8");
+      fs.writeFileSync(resolveConfigPath(), originalContent, "utf-8");
       cleanup = false;
     }
   });
@@ -23,12 +23,19 @@ describe("saveConfig", () => {
     const config = {
       panelists: [
         {
-          id: "test",
-          label: "Test Panelist",
+          id: "test-a",
+          label: "Test Panelist A",
           icon: "🧪",
           tool: "claude" as const,
           model: "claude-sonnet",
           systemPrompt: "You are a test panelist.",
+        },
+        {
+          id: "test-b",
+          label: "Test Panelist B",
+          icon: "🧪",
+          tool: "pi" as const,
+          systemPrompt: "Another test panelist.",
         },
       ],
       judge: {
@@ -45,9 +52,9 @@ describe("saveConfig", () => {
 
     saveConfig(config);
 
-    const saved = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
-    expect(saved.panelists).toHaveLength(1);
-    expect(saved.panelists[0].id).toBe("test");
+    const saved = JSON.parse(fs.readFileSync(resolveConfigPath(), "utf-8"));
+    expect(saved.panelists).toHaveLength(2);
+    expect(saved.panelists[0].id).toBe("test-a");
     expect(saved.judge.label).toBe("Judge");
     expect(saved.validator.promptFile).toBe("./prompts/validator.md");
   });
@@ -68,12 +75,12 @@ describe("config API handlers", () => {
   let cleanup = false;
 
   beforeEach(() => {
-    originalContent = fs.readFileSync(CONFIG_PATH, "utf-8");
+    originalContent = fs.readFileSync(resolveConfigPath(), "utf-8");
   });
 
   afterEach(() => {
     if (cleanup) {
-      fs.writeFileSync(CONFIG_PATH, originalContent, "utf-8");
+      fs.writeFileSync(resolveConfigPath(), originalContent, "utf-8");
       cleanup = false;
     }
   });
@@ -92,12 +99,19 @@ describe("config API handlers", () => {
     const next = {
       panelists: [
         {
-          id: "api-test",
-          label: "API Test",
+          id: "api-test-a",
+          label: "API Test A",
           icon: "🧪",
           tool: "claude" as const,
           model: "",
           systemPrompt: "Test prompt",
+        },
+        {
+          id: "api-test-b",
+          label: "API Test B",
+          icon: "🧪",
+          tool: "pi" as const,
+          systemPrompt: "Another test prompt",
         },
       ],
       judge: {
@@ -121,8 +135,8 @@ describe("config API handlers", () => {
     const res = await handlePostConfig(req);
     expect(res.status).toBe(200);
 
-    const saved = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
-    expect(saved.panelists[0].id).toBe("api-test");
+    const saved = JSON.parse(fs.readFileSync(resolveConfigPath(), "utf-8"));
+    expect(saved.panelists[0].id).toBe("api-test-a");
   });
 
   it("POST /api/config rejects invalid config", async () => {

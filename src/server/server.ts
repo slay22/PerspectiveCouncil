@@ -1,12 +1,11 @@
-import { readFileSync } from "fs";
 import * as path from "path";
-import { HILResponseSchema, RunRequestSchema } from "../core/schemas.ts";
+import { HILResponseSchema, RunRequestSchema, CouncilConfigSchema } from "../core/schemas.ts";
+import { resolveConfigPath } from "../../config/panelists.ts";
 import { store } from "./store.ts";
-import { handleGetConfig, handlePostConfig } from "./config-api.ts";
+import { handleGetConfig, handlePostConfig, handleUploadPromptFile } from "./config-api.ts";
+import uiHtml from "../ui/index.html" with { type: "text" };
 import type { HILResponse } from "../core/types.ts";
 import type { ConductorConfig } from "../main.ts";
-
-const UI_PATH = path.join(import.meta.dir, "../ui/index.html");
 const sockets = new Set<ServerWebSocket<unknown>>();
 type ServerWebSocket<T> = import("bun").ServerWebSocket<T>;
 
@@ -30,9 +29,10 @@ function authorized(req: Request): boolean {
 const UNAUTHORIZED = () => json({ error: "Unauthorized" }, 401);
 
 export function startServer(port = 3000): void {
-  Bun.serve({
-    port,
-    hostname: HOST,
+  try {
+    Bun.serve({
+      port,
+      hostname: HOST,
     fetch(req, server) {
       const url = new URL(req.url);
 
@@ -66,18 +66,18 @@ export function startServer(port = 3000): void {
         return handlePostConfig(req);
       }
 
+      if (url.pathname === "/api/config/prompt-file" && req.method === "POST") {
+        if (!authorized(req)) return UNAUTHORIZED();
+        return handleUploadPromptFile(req);
+      }
+
       if (url.pathname === "/" || url.pathname === "/index.html") {
-        try {
-          const html = readFileSync(UI_PATH, "utf-8");
-          // Hand the same-origin UI the token so its fetches can authenticate.
-          const injected = html.replace(
-            "</head>",
-            `<script>window.__COUNCIL_API_TOKEN__=${JSON.stringify(API_TOKEN)};</script></head>`
-          );
-          return new Response(injected, { headers: { "Content-Type": "text/html; charset=utf-8" } });
-        } catch {
-          return new Response("UI not found", { status: 404 });
-        }
+        // Hand the same-origin UI the token so its fetches can authenticate.
+        const injected = (uiHtml as unknown as string).replace(
+          "</head>",
+          `<script>window.__COUNCIL_API_TOKEN__=${JSON.stringify(API_TOKEN)};</script></head>`
+        );
+        return new Response(injected, { headers: { "Content-Type": "text/html; charset=utf-8" } });
       }
 
       return new Response("Not found", { status: 404 });
@@ -92,7 +92,16 @@ export function startServer(port = 3000): void {
       close(ws) { sockets.delete(ws); },
       message() {},
     },
-  });
+    });
+  } catch (e: unknown) {
+    const errMsg = e instanceof Error ? e.message : String(e);
+    if (/address|port|in use|EADDRINUSE/i.test(errMsg)) {
+      console.error(`\n  ✗ Could not bind ${HOST}:${port} — port already in use.`);
+      console.error(`    Pass --port <n> or set COUNCIL_PORT=<n> to use a different port.\n`);
+      process.exit(1);
+    }
+    throw e;
+  }
 
   store.subscribe((event) => {
     const msg = JSON.stringify(event);
@@ -130,6 +139,26 @@ async function handleRun(req: Request): Promise<Response> {
     req2 = RunRequestSchema.parse(await req.json());
   } catch (e) {
     return json({ error: String(e) }, 400);
+  }
+
+  // Safety net: re-validate that the persisted config has ≥ 2 active
+  // panelists. The Config UI's Zod refine catches this at save time, but
+  // a hand-edited panelists.json (or a stale embedded config in the
+  // compiled binary) might bypass it. Read the active count without
+  // re-running the full loadConfig (which needs worktreeBase + runId).
+  try {
+    const raw = await import("fs/promises").then((m) => m.readFile(resolveConfigPath(), "utf-8"));
+    const parsed = CouncilConfigSchema.parse(JSON.parse(raw));
+    const activeCount = parsed.panelists.filter((p) => p.active !== false).length;
+    if (activeCount < 2) {
+      return json({
+        error: `At least 2 panelists must be active (currently ${activeCount}). ` +
+               `Edit config/panelists.json or use the Config tab.`,
+      }, 400);
+    }
+  } catch (e) {
+    // If reading the config fails for any reason, fall through to the
+    // run attempt — the conductor's loadConfig will surface a clear error.
   }
 
   const config: ConductorConfig = {
