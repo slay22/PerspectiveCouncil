@@ -51,8 +51,11 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 COPY . .
 
-# Bind the GUI/API on all interfaces so `-p` works; pair with COUNCIL_API_TOKEN.
-ENV COUNCIL_HOST=0.0.0.0
+# By default the GUI/API bind loopback for safety. To expose it on the network
+# (`-p 3000:3000`) you MUST also set COUNCIL_API_TOKEN — the app refuses to bind
+# a non-loopback host without a token. Override COUNCIL_HOST=0.0.0.0 at run time
+# and pass `-e COUNCIL_API_TOKEN=...`.
+ENV COUNCIL_HOST=127.0.0.1
 EXPOSE 3000
 
 # Pass --repo / --branch / --context (and optionally --config) as `docker run` args.

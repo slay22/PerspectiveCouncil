@@ -229,7 +229,11 @@ function useCouncil() {
     }).catch(() => {});
 
     const connect = () => {
-      const ws = new WebSocket(`ws://${location.host}/ws`);
+      const tok = window.__COUNCIL_API_TOKEN__;
+      const wsUrl = tok
+        ? `ws://${location.host}/ws?token=${encodeURIComponent(tok)}`
+        : `ws://${location.host}/ws`;
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       ws.onopen = () => setConnected(true);
       ws.onclose = () => { setConnected(false); setTimeout(connect, 2000); };

@@ -114,7 +114,7 @@ Notes:
 - The image installs `git` + `gh`; edit the **agent CLI** block in the `Dockerfile` to install only the tools your `panelists.json` uses (Claude Code is included by default).
 - Prefer headless auth (`ANTHROPIC_API_KEY`, `GH_TOKEN`, …) over the interactive logins in the table below.
 - Mount the target repo **read-write** — the implementor creates a branch in its `.git`.
-- `COUNCIL_HOST=0.0.0.0` is set in the image so `-p` works; always pair it with `COUNCIL_API_TOKEN`.
+- The image binds **loopback by default**. To expose the GUI on the network (`-p 3000:3000`) you MUST also set `COUNCIL_API_TOKEN` — the app refuses to bind a non-loopback host without a token, and every endpoint (including `GET /api/state` and the WebSocket) requires it. Pass both at run time: `-e COUNCIL_HOST=0.0.0.0 -e COUNCIL_API_TOKEN=...`.
 
 ---
 
@@ -273,7 +273,7 @@ tests/                    # bun:test suite
 
 - Each reviewer works in its own **detached, read-only git worktree**.
 - The implementor works in a separate branch and worktree.
-- The web server binds to **`127.0.0.1`** by default (override with `COUNCIL_HOST`). Set `COUNCIL_API_TOKEN` to require a bearer token on the config/HIL endpoints.
+- The web server binds to **`127.0.0.1`** by default (override with `COUNCIL_HOST`). A non-loopback bind **requires** `COUNCIL_API_TOKEN` and the app refuses to start otherwise; when a token is set it guards **every** HTTP endpoint (including `GET /api/state`) and the WebSocket (token passed via `?token=` for the browser UI, or `Authorization: Bearer` for other clients).
 - LLM instructions are passed to Claude Code via `--system-prompt` files, **never through shell interpolation**.
 - All external JSON inputs (judge plan, validator report, HIL response, config) are validated with **Zod**.
 - CLI calls have configurable timeouts to prevent hangs.

@@ -18,72 +18,114 @@ export function registerPipelineRunner(fn: (config: ConductorConfig) => Promise<
 // Default to loopback so the server is not reachable from other hosts.
 // Set COUNCIL_HOST=0.0.0.0 to expose it deliberately.
 const HOST = process.env.COUNCIL_HOST ?? "127.0.0.1";
-// When set, mutating/config endpoints require `Authorization: Bearer <token>`.
+// When set, mutating/config AND read endpoints require a bearer token.
 const API_TOKEN = process.env.COUNCIL_API_TOKEN ?? "";
 
-function authorized(req: Request): boolean {
-  if (!API_TOKEN) return true; // loopback bind is the protection when no token set
-  return req.headers.get("authorization") === `Bearer ${API_TOKEN}`;
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+/**
+ * Refuse to bind a non-loopback host unless an API token is configured.
+ * Loopback-without-token stays the convenient local default; anything reachable
+ * from the network MUST be authenticated. Throws if the combination is unsafe.
+ */
+export function assertSafeBind(host: string, apiToken: string): void {
+  if (!LOOPBACK_HOSTS.has(host) && !apiToken) {
+    throw new Error(
+      `Refusing to bind ${host} without an API token. ` +
+      "Set COUNCIL_API_TOKEN (e.g. COUNCIL_API_TOKEN=$(openssl rand -hex 16)) " +
+      "or bind loopback by omitting COUNCIL_HOST."
+    );
+  }
+}
+
+/** Bearer-token check for HTTP routes. When no token is configured, allow. */
+export function authorized(req: Request, token: string): boolean {
+  if (!token) return true; // assertSafeBind enforces the off-loopback rule elsewhere
+  return req.headers.get("authorization") === `Bearer ${token}`;
+}
+
+/**
+ * Auth for the WebSocket upgrade. Browsers cannot set custom headers on a WS
+ * handshake, so in addition to the Authorization header (for non-browser
+ * clients) we accept the token via a `?token=<token>` query parameter that the
+ * same-origin UI appends.
+ */
+export function authorizedWs(req: Request, token: string): boolean {
+  if (!token) return true;
+  if (req.headers.get("authorization") === `Bearer ${token}`) return true;
+  const q = new URL(req.url).searchParams.get("token");
+  return q === token;
 }
 
 const UNAUTHORIZED = () => json({ error: "Unauthorized" }, 401);
 
+/**
+ * Build the fetch handler used by Bun.serve. Extracted so the routing can be
+ * unit-tested without binding a real socket: `buildFetchHandler(token)` returns
+ * a function that can be invoked with synthetic Requests and a fake `server`.
+ */
+export function buildFetchHandler(apiToken: string) {
+  return (req: Request, server: { upgrade(req: Request): boolean }): Response | undefined | Promise<Response> => {
+    const url = new URL(req.url);
+
+    if (url.pathname === "/ws") {
+      if (!authorizedWs(req, apiToken)) return UNAUTHORIZED();
+      const upgraded = server.upgrade(req);
+      if (upgraded) return undefined as unknown as Response;
+      return new Response("WebSocket upgrade failed", { status: 400 });
+    }
+
+    if (url.pathname === "/api/state" && req.method === "GET") {
+      if (!authorized(req, apiToken)) return UNAUTHORIZED();
+      return json(store.getState() ?? { error: "No run active" });
+    }
+
+    if (url.pathname === "/api/hil" && req.method === "POST") {
+      if (!authorized(req, apiToken)) return UNAUTHORIZED();
+      return handleHIL(req);
+    }
+
+    if (url.pathname === "/api/run" && req.method === "POST") {
+      if (!authorized(req, apiToken)) return UNAUTHORIZED();
+      return handleRun(req);
+    }
+
+    if (url.pathname === "/api/config" && req.method === "GET") {
+      if (!authorized(req, apiToken)) return UNAUTHORIZED();
+      return handleGetConfig();
+    }
+
+    if (url.pathname === "/api/config" && req.method === "POST") {
+      if (!authorized(req, apiToken)) return UNAUTHORIZED();
+      return handlePostConfig(req);
+    }
+
+    if (url.pathname === "/api/config/prompt-file" && req.method === "POST") {
+      if (!authorized(req, apiToken)) return UNAUTHORIZED();
+      return handleUploadPromptFile(req);
+    }
+
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      // Hand the same-origin UI the token so its fetches can authenticate.
+      const injected = (uiHtml as unknown as string).replace(
+        "</head>",
+        `<script>window.__COUNCIL_API_TOKEN__=${JSON.stringify(apiToken)};</script></head>`
+      );
+      return new Response(injected, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
+    return new Response("Not found", { status: 404 });
+  };
+}
+
 export function startServer(port = 3000): void {
+  assertSafeBind(HOST, API_TOKEN);
   try {
     Bun.serve({
       port,
       hostname: HOST,
-    fetch(req, server) {
-      const url = new URL(req.url);
-
-      if (url.pathname === "/ws") {
-        const upgraded = server.upgrade(req);
-        if (upgraded) return undefined as unknown as Response;
-        return new Response("WebSocket upgrade failed", { status: 400 });
-      }
-
-      if (url.pathname === "/api/state" && req.method === "GET") {
-        return json(store.getState() ?? { error: "No run active" });
-      }
-
-      if (url.pathname === "/api/hil" && req.method === "POST") {
-        if (!authorized(req)) return UNAUTHORIZED();
-        return handleHIL(req);
-      }
-
-      if (url.pathname === "/api/run" && req.method === "POST") {
-        if (!authorized(req)) return UNAUTHORIZED();
-        return handleRun(req);
-      }
-
-      if (url.pathname === "/api/config" && req.method === "GET") {
-        if (!authorized(req)) return UNAUTHORIZED();
-        return handleGetConfig();
-      }
-
-      if (url.pathname === "/api/config" && req.method === "POST") {
-        if (!authorized(req)) return UNAUTHORIZED();
-        return handlePostConfig(req);
-      }
-
-      if (url.pathname === "/api/config/prompt-file" && req.method === "POST") {
-        if (!authorized(req)) return UNAUTHORIZED();
-        return handleUploadPromptFile(req);
-      }
-
-      if (url.pathname === "/" || url.pathname === "/index.html") {
-        // Hand the same-origin UI the token so its fetches can authenticate.
-        const injected = (uiHtml as unknown as string).replace(
-          "</head>",
-          `<script>window.__COUNCIL_API_TOKEN__=${JSON.stringify(API_TOKEN)};</script></head>`
-        );
-        return new Response(injected, { headers: { "Content-Type": "text/html; charset=utf-8" } });
-      }
-
-      return new Response("Not found", { status: 404 });
-    },
-
-    websocket: {
+      fetch: buildFetchHandler(API_TOKEN),
+      websocket: {
       open(ws) {
         sockets.add(ws);
         const state = store.getState();
