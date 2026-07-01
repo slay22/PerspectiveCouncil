@@ -1,11 +1,9 @@
-import { $ } from "bun";
 import * as fs from "fs/promises";
+import * as fsSync from "fs";
 import * as os from "os";
 import * as path from "path";
 import { z } from "zod";
 import type { CliTool } from "./schemas.ts";
-
-type ShellPromise = ReturnType<typeof $>;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,7 +33,9 @@ export async function runCLI(opts: CliRunOptions): Promise<string> {
   try {
     return await runCLIInner(opts, controller.signal);
   } catch (e) {
-    if (e instanceof Error && e.name === "AbortError") {
+    // A timeout fires controller.abort(); spawnCli surfaces that as a thrown
+    // error after the killed process exits. Map it to a clear timeout message.
+    if (controller.signal.aborted) {
       throw new Error(`[${opts.label ?? opts.tool}] CLI call timed out after ${timeoutMs}ms`);
     }
     throw e;
@@ -57,9 +57,72 @@ function defaultTimeoutFor(tool: CliTool): number {
   return tool === "pi" ? 600_000 : 300_000;
 }
 
-// Bun's ShellPromise supports abortSignal at runtime but the types don't expose it yet.
-function withSignal(promise: ShellPromise, signal: AbortSignal): ShellPromise {
-  return (promise as unknown as { abortSignal(s: AbortSignal): ShellPromise }).abortSignal(signal);
+// ─── Spawn helper ─────────────────────────────────────────────────────────────
+// Uses Bun.spawn directly (not the `$` shell) so we can: (a) feed the prompt via
+// a file on stdin without an argv element (avoids E2BIG on big codebases), and
+// (b) implement a real timeout/cancel by killing the child process on abort.
+// The old code cast the ShellPromise to an `abortSignal` method that does not
+// exist in current Bun, so timeouts never worked and every call would throw.
+
+interface SpawnArgs {
+  cmd:      string[];   // argv array (no shell parsing)
+  cwd?:     string;
+  stdinFile: string;   // file piped to the child's stdin
+  signal:   AbortSignal;
+  label:    string;
+}
+
+// Bun.spawn does not re-resolve PATH from a runtime-mutated process.env.PATH
+// (it uses the value captured at process start), so resolve the binary name
+// manually against the current PATH. Falls back to the bare name so Bun's
+// native resolution still applies when nothing is found.
+function resolveOnPath(name: string): string {
+  if (name.includes(path.sep)) return name;
+  const pathEnv = process.env.PATH ?? "";
+  for (const dir of pathEnv.split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, name);
+    try {
+      const stat = fsSync.statSync(candidate);
+      if (stat.isFile() && (stat.mode & 0o111)) return candidate;
+    } catch { /* not present */ }
+  }
+  return name;
+}
+
+async function spawnCli(args: SpawnArgs): Promise<string> {
+  // stdout/stderr go to temp files (not pipes) so that: (a) a child that writes
+  // more than the pipe buffer (the ~300k-char codebase) can't deadlock us, and
+  // (b) when a timeout kills the parent shell, an orphaned grandchild that
+  // inherits the pipe fd can't keep our drain from reaching EOF.
+  const outFile = await writeTempFile("", "out");
+  const errFile = await writeTempFile("", "err");
+  const proc = Bun.spawn({
+    cmd:    [resolveOnPath(args.cmd[0] ?? ""), ...args.cmd.slice(1)],
+    cwd:    args.cwd,
+    stdin:  Bun.file(args.stdinFile),
+    stdout: Bun.file(outFile),
+    stderr: Bun.file(errFile),
+  });
+
+  const onAbort = () => { try { proc.kill("SIGTERM"); } catch { /* already exited */ } };
+  args.signal.addEventListener("abort", onAbort, { once: true });
+  const exitCode = await proc.exited;
+  args.signal.removeEventListener("abort", onAbort);
+
+  const stdout = await fs.readFile(outFile, "utf-8").catch(() => "");
+  const stderr = await fs.readFile(errFile, "utf-8").catch(() => "");
+  await fs.unlink(outFile).catch(() => {});
+  await fs.unlink(errFile).catch(() => {});
+
+  if (args.signal.aborted) {
+    throw new Error(`[${args.label}] aborted`);
+  }
+  if (exitCode !== 0) {
+    throw new Error(`[${args.label}] exited ${exitCode}: ${stderr.trim()}`);
+  }
+  return stdout.trim();
+
 }
 
 export async function runCLIJSON<T>(opts: CliRunOptions, schema: z.ZodSchema<T>): Promise<T> {
@@ -84,60 +147,79 @@ export async function runCLIJSON<T>(opts: CliRunOptions, schema: z.ZodSchema<T>)
 }
 
 // ─── Claude Code ─────────────────────────────────────────────────────────────
-// claude --print [--model <model>] --system-prompt <file> "<message>"
+// claude --print [--model <model>] --system-prompt-file <file>   (prompt via stdin)
+// The serialized codebase can be ~320k chars — far too large for a single argv
+// element on some hosts (macOS ARG_MAX, small containers → E2BIG/exit 127), so
+// the user message is written to a temp file and piped to claude's stdin, which
+// --print treats as the prompt when no positional prompt is supplied.
+// Note: --system-prompt takes TEXT; --system-prompt-file takes a PATH. The old
+// code passed a path to --system-prompt, sending the literal path string as the
+// system prompt — fixed here.
 
 async function runClaude(opts: CliRunOptions, signal: AbortSignal): Promise<string> {
   const systemFile = await writeTempFile(opts.systemPrompt!, "claude-system");
+  const userFile   = await writeTempFile(opts.userMessage, "claude-user");
   try {
-    const modelFlag  = opts.model ? ["--model", opts.model] : [];
-    const result = await withSignal($`claude --print --no-interactive ${modelFlag} --system-prompt ${systemFile} ${opts.userMessage}`
-      .cwd(opts.cwd ?? process.cwd())
-      .nothrow(), signal);
-
-    if (result.exitCode !== 0)
-      throw new Error(`[${opts.label ?? "claude"}] exited ${result.exitCode}: ${result.stderr}`);
-
-    return result.stdout.toString().trim();
+    const cmd = [
+      "claude", "--print",  // --print is already non-interactive; old --no-interactive was rejected by claude.
+      ...(opts.model ? ["--model", opts.model!] : [] as string[]),
+      "--system-prompt-file", systemFile,
+    ];
+    return await spawnCli({
+      cmd, cwd: opts.cwd, stdinFile: userFile, signal,
+      label: opts.label ?? "claude",
+    });
   } finally {
     await fs.unlink(systemFile).catch(() => {});
+    await fs.unlink(userFile).catch(() => {});
   }
 }
 
 // ─── OpenCode ─────────────────────────────────────────────────────────────────
-// opencode run [--model <provider/model>] "<message>"
-// No --system-prompt flag — prepend to user message
+// opencode run [--model <provider/model>]   (prompt via stdin)
+// No --system-prompt flag — prepend system prompt to the user message, then
+// pipe the combined prompt via stdin (avoiding argv size limits).
 
 async function runOpenCode(opts: CliRunOptions, signal: AbortSignal): Promise<string> {
   const fullPrompt = `${opts.systemPrompt}\n\n---\n\n${opts.userMessage}`;
-  const modelFlag  = opts.model ? ["--model", opts.model] : [];
-
-  const result = await withSignal($`opencode run ${modelFlag} ${fullPrompt}`
-    .cwd(opts.cwd ?? process.cwd())
-    .nothrow(), signal);
-
-  if (result.exitCode !== 0)
-    throw new Error(`[${opts.label ?? "opencode"}] exited ${result.exitCode}: ${result.stderr}`);
-
-  return result.stdout.toString().trim();
+  const userFile   = await writeTempFile(fullPrompt, "opencode-user");
+  try {
+    const cmd = [
+      "opencode", "run",
+      ...(opts.model ? ["--model", opts.model!] : [] as string[]),
+    ];
+    const raw = await spawnCli({
+      cmd, cwd: opts.cwd, stdinFile: userFile, signal,
+      label: opts.label ?? "opencode",
+    });
+    return raw;
+  } finally {
+    await fs.unlink(userFile).catch(() => {});
+  }
 }
 
 // ─── Pi ───────────────────────────────────────────────────────────────────────
-// pi --mode json [--model <model>] --system-prompt <file> "<message>"
+// pi --mode json [--model <model>] --system-prompt <text>   (prompt via stdin)
+// Pi has no --system-prompt-FILE flag, so the system prompt is passed inline as
+// text (prompt files are small enough for argv); the user message is piped via
+// stdin. The old code passed a temp-file PATH to --system-prompt, sending the
+// literal path as the system prompt — fixed here.
 
 async function runPi(opts: CliRunOptions, signal: AbortSignal): Promise<string> {
-  const systemFile = await writeTempFile(opts.systemPrompt!, "pi-system");
+  const userFile  = await writeTempFile(opts.userMessage, "pi-user");
   try {
-    const modelFlag  = opts.model ? ["--model", opts.model] : [];
-    const result = await withSignal($`pi --mode json ${modelFlag} --system-prompt ${systemFile} ${opts.userMessage}`
-      .cwd(opts.cwd ?? process.cwd())
-      .nothrow(), signal);
-
-    if (result.exitCode !== 0)
-      throw new Error(`[${opts.label ?? "pi"}] exited ${result.exitCode}: ${result.stderr}`);
-
-    return extractPiText(result.stdout.toString());
+    const cmd = [
+      "pi", "--mode", "json",
+      ...(opts.model ? ["--model", opts.model!] : [] as string[]),
+      "--system-prompt", String(opts.systemPrompt),
+    ];
+    const raw = await spawnCli({
+      cmd, cwd: opts.cwd, stdinFile: userFile, signal,
+      label: opts.label ?? "pi",
+    });
+    return extractPiText(raw);
   } finally {
-    await fs.unlink(systemFile).catch(() => {});
+    await fs.unlink(userFile).catch(() => {});
   }
 }
 
@@ -180,8 +262,11 @@ function extractContentText(content: unknown): string {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+let tempSeq = 0;
+
 export async function writeTempFile(content: string, prefix: string): Promise<string> {
-  const p = path.join(os.tmpdir(), `council-${prefix}-${Date.now()}.txt`);
+  // Unique across parallel panelist runs (which run concurrently).
+  const p = path.join(os.tmpdir(), `council-${prefix}-${Date.now()}-${tempSeq++}.txt`);
   await fs.writeFile(p, content, "utf-8");
   return p;
 }
