@@ -169,8 +169,7 @@ async function handleMessage(msg: TgMessage): Promise<void> {
         await send(chatId, "Usage: `/run <repo> <branch> <context>`\n\nExample:\n`/run /projects/api main Harden for production`");
         break;
       }
-      const active = store.getState();
-      if (active && active.currentStage !== "done" && active.currentStage !== "aborted") {
+      if (!store.isIdle()) {
         await send(chatId, "⏳ A run is already in progress. Use `/status` to check.");
         break;
       }
@@ -196,8 +195,7 @@ async function handleMessage(msg: TgMessage): Promise<void> {
         await send(chatId, "Usage: `/new <dir> <branch> <idea>`\n\nExample:\n`/new /projects/reverser main A Bun CLI that reverses stdin`");
         break;
       }
-      const active = store.getState();
-      if (active && active.currentStage !== "done" && active.currentStage !== "aborted") {
+      if (!store.isIdle()) {
         await send(chatId, "⏳ A run is already in progress. Use `/status` to check.");
         break;
       }

@@ -171,8 +171,9 @@ async function handleRun(req: Request): Promise<Response> {
   if (!pipelineRunner) return json({ error: "Run launcher unavailable" }, 503);
 
   // Reject overlapping runs (the store is a single-run singleton).
-  const active = store.getState();
-  if (active && active.currentStage !== "done" && active.currentStage !== "aborted") {
+  // store.isIdle() is the single source of truth; do not re-derive "active"
+  // from raw stage comparisons here (that drifts from the conductor's guard).
+  if (!store.isIdle()) {
     return json({ error: "A run is already in progress" }, 409);
   }
 

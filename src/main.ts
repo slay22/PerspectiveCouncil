@@ -32,13 +32,6 @@ export interface ConductorConfig {
 }
 
 let booted = false;
-let pipelineActive = false;
-
-/** True while a pipeline run is in flight. The store is a process-global
- *  singleton, so only one run may be active at a time. */
-export function isPipelineActive(): boolean {
-  return pipelineActive;
-}
 
 async function boot(port: number): Promise<void> {
   if (booted) return;
@@ -64,10 +57,10 @@ async function boot(port: number): Promise<void> {
 export async function runPipeline(config: ConductorConfig): Promise<void> {
   // The store is a process-global singleton; reject overlapping runs so a
   // second /run (or a stray call) can't reset the in-flight run's state.
-  if (pipelineActive) {
+  // store.isIdle() is the single source of truth for "can a run start?".
+  if (!store.isIdle()) {
     throw new Error("A pipeline run is already in progress — wait for it to finish.");
   }
-  pipelineActive = true;
 
   const runId        = randomUUID();
   const worktreeBase = config.worktreeBase ?? os.tmpdir();
@@ -75,209 +68,207 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
   const maxIter      = config.maxIterations ?? 3;
   const port         = config.port ?? 3000;
 
+  await boot(port);
+
+  // ── Resolve mode (explicit override, else --spec, else infer from repo) ───
+  const mode: PipelineMode =
+    config.mode ?? (config.specPath ? "greenfield" : await inferMode(config.repoPath));
+
+  // ── Load config fresh from panelists.json ────────────────────────────────
+  // Re-read on every pipeline run so edits take effect immediately.
+  let council;
   try {
-    await boot(port);
-
-    // ── Resolve mode (explicit override, else --spec, else infer from repo) ───
-    const mode: PipelineMode =
-      config.mode ?? (config.specPath ? "greenfield" : await inferMode(config.repoPath));
-
-    // ── Load config fresh from panelists.json ────────────────────────────────
-    // Re-read on every pipeline run so edits take effect immediately.
-    let council;
-    try {
-      council = loadConfig(worktreeBase, runId, config.configPath, mode);
-    } catch (e) {
-      console.error("  ✗ Invalid panelists.json:", e);
-      throw e;
-    }
-
-    const { panelists, judge, validator, forge, evaluation } = council;
-
-    // Filter out inactive panelists. Inactive ones are kept in
-    // config/panelists.json so the user can re-enable them, but they
-    // don't get a worktree, don't run, and don't show in the live UI.
-    // The cast is needed because CouncilConfig's Zod-inferred PanelistConfig
-    // and the runtime PanelistConfig (with worktreePath) are distinct types.
-    const activePanelists = panelists.filter((p) => p.active !== false) as Array<typeof panelists[number]>;
-    for (const p of panelists) {
-      if (p.active === false) {
-        store.log("info", `Skipping inactive panelist: ${p.label} (${p.id})`);
-      }
-    }
-
-    store.init({
-      runId,
-      repoPath:       config.repoPath,
-      branch:         config.branch,
-      projectContext: config.projectContext,
-      maxIterations:  maxIter,
-      panelists:      activePanelists.map((p) => ({
-        id: p.id, label: p.label, icon: p.icon ?? "🤖", model: p.model ?? p.tool,
-      })),
-    });
-
-    store.log("info", `Mode: ${mode}`);
-    if (evaluation?.enabled) {
-      store.log("warn", "Evaluation enabled — build/test/run commands will execute agent-generated code. Use the Docker sandbox.");
-    }
-
-    const run: PipelineRun = {
-      id: runId, repoPath: config.repoPath, branch: config.branch,
-      stage: "init", startedAt: new Date(), iterations: 0, maxIterations: maxIter,
-    };
-
-    try {
-      // ── Worktrees ───────────────────────────────────────────────────────────
-      store.setStage("worktrees");
-      if (mode === "greenfield") {
-        store.log("info", "Bootstrapping new project…");
-        await bootstrapGreenfield(config.repoPath, config.branch);
-      }
-      store.log("info", "Creating git worktrees…");
-      await createWorktrees(config.repoPath, config.branch, activePanelists);
-      await createImplementorWorktree(config.repoPath, config.branch, implPath, runId);
-      store.emit_({ type: "worktrees_ready", ts: Date.now() });
-
-      // ── Panel ─────────────────────────────────────────────────────────────────
-      store.setStage("panel");
-      const specText = mode === "greenfield"
-        ? await loadSpec(config.specPath, config.projectContext)
-        : undefined;
-      const panelResults = await runPanel(activePanelists, { specText });
-      run.panelResults = panelResults;
-
-      // ── Plan → implement → validate → HIL loop ──────────────────────────────
-      // A "revise_plan" decision loops back to the judge here (reusing the panel
-      // results), rather than re-running the whole pipeline.
-      let revisePlanNotes: string | undefined;
-
-      planLoop: while (true) {
-        run.iterations = 0;
-
-        // Feedback carried across iterations so retries actually converge.
-        let validatorFeedback: string | undefined;
-        let prevPlanSig: string | undefined;
-        let prevVerdict: ValidatorVerdict | undefined;
-
-        // ── Iteration loop (judge → implement → validate) ──────────────────────
-        while (run.iterations < maxIter) {
-          run.iterations++;
-          store.setIteration(run.iterations);
-
-          store.setStage("judge");
-          run.judgePlan = await runJudge(judge, config.projectContext, panelResults, revisePlanNotes, validatorFeedback);
-          revisePlanNotes = undefined; // consumed by the judge
-          const currPlanSig = planSignature(run.judgePlan);
-
-          store.setStage("implement");
-          let implError: string | null = null;
-          try {
-            await runImplementor(implPath, run.judgePlan, mode);
-            store.emit_({ type: "impl_complete", ts: Date.now() });
-          } catch (e) {
-            implError = String(e);
-            store.log("error", `Implementor error: ${implError}`);
-          }
-
-          store.setStage("validate");
-          let evalResult;
-          if (evaluation?.enabled) {
-            store.log("info", "Running evaluation (build/test)…");
-            evalResult = await runEvaluation(implPath, evaluation);
-            store.log(evalResult.passed ? "info" : "warn", `Evaluation ${evalResult.passed ? "passed" : "failed"}.`);
-          }
-          run.validatorReport = await runValidator(validator, implPath, config.branch, run.judgePlan, evalResult);
-          const currVerdict = run.validatorReport.verdict;
-
-          if (implError) {
-            // A failed/partial implementation must never auto-PR — let a human decide.
-            store.log("warn", "Implementation did not complete — escalating to human review.");
-            break;
-          }
-          if (currVerdict === "PASS") break;
-          if (run.iterations >= maxIter) {
-            store.log("warn", "Max iterations — escalating to HIL");
-            break;
-          }
-          if (isStalled({ prevPlanSig, currPlanSig, prevVerdict, currVerdict })) {
-            store.log("warn", "No progress (same plan, no improvement) — escalating to HIL");
-            break;
-          }
-
-          // Feed this iteration's findings into the next judge call.
-          validatorFeedback = formatValidatorFeedback(run.validatorReport);
-          prevPlanSig = currPlanSig;
-          prevVerdict = currVerdict;
-          store.log("warn", `Validator ${currVerdict} — retrying with feedback…`);
-        }
-
-        // ── HIL ──────────────────────────────────────────────────────────────────
-        store.setStage("hil");
-        await runHIL();
-        run.hilResponse = store.getState()!.hilResponse!;
-
-        if (run.hilResponse.decision === "abort") {
-          store.setStage("aborted");
-          store.log("info", "Aborted by reviewer.");
-          await cleanup(config.repoPath, panelists, implPath);
-          return;
-        }
-
-        if (run.hilResponse.decision === "revise_plan") {
-          store.log("info", "Returning to judge with reviewer notes…");
-          revisePlanNotes = run.hilResponse.revisePlanInstructions;
-          continue planLoop; // reuse panel results, re-run the judge
-        }
-
-        if (run.hilResponse.decision === "revise_implementation") {
-          store.log("info", "Revising implementation…");
-          if (run.judgePlan && run.hilResponse.reviseImplInstructions) {
-            run.judgePlan.tasks.push({
-              id: `hil-${Date.now()}`, file: ".", action: "refactor",
-              instruction: run.hilResponse.reviseImplInstructions,
-              rationale: "Human reviewer requested", priority: "P0", source: ["hil"],
-            });
-            await runImplementor(implPath, run.judgePlan, mode);
-
-            // Re-validate the human-requested change before opening the PR.
-            store.setStage("validate");
-            const reEval = evaluation?.enabled ? await runEvaluation(implPath, evaluation) : undefined;
-            run.validatorReport = await runValidator(validator, implPath, config.branch, run.judgePlan, reEval);
-            if (run.validatorReport.verdict === "REJECT") {
-              store.log("warn", "HIL revision failed validation — proceeding to PR anyway.");
-            }
-          }
-        }
-
-        break; // approve / approve_with_notes / revise_implementation → proceed to PR
-      }
-
-      // ── PR ────────────────────────────────────────────────────────────────────
-      store.setStage("pr");
-      store.log("info", "Creating pull request…");
-      const prUrl = await createPR(config.repoPath, implPath, {
-        ...run,
-        panelResults:    run.panelResults,
-        judgePlan:       run.judgePlan,
-        validatorReport: run.validatorReport,
-        hilResponse:     run.hilResponse,
-      }, forge);
-      store.setPRUrl(prUrl);
-      store.setDone();
-      store.log("info", `PR created: ${prUrl}`);
-
-      // Clean up implementation worktree now that the branch has been pushed
-      await cleanup(config.repoPath, panelists, implPath);
-
-    } catch (e) {
-      store.setError(String(e));
-      await cleanup(config.repoPath, panelists, implPath);
-      throw e;
-    }
-  } finally {
-    pipelineActive = false;
+    council = loadConfig(worktreeBase, runId, config.configPath, mode);
+  } catch (e) {
+    console.error("  ✗ Invalid panelists.json:", e);
+    throw e;
   }
+
+  const { panelists, judge, validator, forge, evaluation } = council;
+
+  // Filter out inactive panelists. Inactive ones are kept in
+  // config/panelists.json so the user can re-enable them, but they
+  // don't get a worktree, don't run, and don't show in the live UI.
+  // The cast is needed because CouncilConfig's Zod-inferred PanelistConfig
+  // and the runtime PanelistConfig (with worktreePath) are distinct types.
+  const activePanelists = panelists.filter((p) => p.active !== false) as Array<typeof panelists[number]>;
+  for (const p of panelists) {
+    if (p.active === false) {
+      store.log("info", `Skipping inactive panelist: ${p.label} (${p.id})`);
+    }
+  }
+
+  store.init({
+    runId,
+    repoPath:       config.repoPath,
+    branch:         config.branch,
+    projectContext: config.projectContext,
+    maxIterations:  maxIter,
+    panelists:      activePanelists.map((p) => ({
+      id: p.id, label: p.label, icon: p.icon ?? "🤖", model: p.model ?? p.tool,
+    })),
+  });
+
+  store.log("info", `Mode: ${mode}`);
+  if (evaluation?.enabled) {
+    store.log("warn", "Evaluation enabled — build/test/run commands will execute agent-generated code. Use the Docker sandbox.");
+  }
+
+  const run: PipelineRun = {
+    id: runId, repoPath: config.repoPath, branch: config.branch,
+    stage: "init", startedAt: new Date(), iterations: 0, maxIterations: maxIter,
+  };
+
+  try {
+    // ── Worktrees ───────────────────────────────────────────────────────────
+    store.setStage("worktrees");
+    if (mode === "greenfield") {
+      store.log("info", "Bootstrapping new project…");
+      await bootstrapGreenfield(config.repoPath, config.branch);
+    }
+    store.log("info", "Creating git worktrees…");
+    await createWorktrees(config.repoPath, config.branch, activePanelists);
+    await createImplementorWorktree(config.repoPath, config.branch, implPath, runId);
+    store.emit_({ type: "worktrees_ready", ts: Date.now() });
+
+    // ── Panel ─────────────────────────────────────────────────────────────────
+    store.setStage("panel");
+    const specText = mode === "greenfield"
+      ? await loadSpec(config.specPath, config.projectContext)
+      : undefined;
+    const panelResults = await runPanel(activePanelists, { specText });
+    run.panelResults = panelResults;
+
+    // ── Plan → implement → validate → HIL loop ──────────────────────────────
+    // A "revise_plan" decision loops back to the judge here (reusing the panel
+    // results), rather than re-running the whole pipeline.
+    let revisePlanNotes: string | undefined;
+
+    planLoop: while (true) {
+      run.iterations = 0;
+
+      // Feedback carried across iterations so retries actually converge.
+      let validatorFeedback: string | undefined;
+      let prevPlanSig: string | undefined;
+      let prevVerdict: ValidatorVerdict | undefined;
+
+      // ── Iteration loop (judge → implement → validate) ──────────────────────
+      while (run.iterations < maxIter) {
+        run.iterations++;
+        store.setIteration(run.iterations);
+
+        store.setStage("judge");
+        run.judgePlan = await runJudge(judge, config.projectContext, panelResults, revisePlanNotes, validatorFeedback);
+        revisePlanNotes = undefined; // consumed by the judge
+        const currPlanSig = planSignature(run.judgePlan);
+
+        store.setStage("implement");
+        let implError: string | null = null;
+        try {
+          await runImplementor(implPath, run.judgePlan, mode);
+          store.emit_({ type: "impl_complete", ts: Date.now() });
+        } catch (e) {
+          implError = String(e);
+          store.log("error", `Implementor error: ${implError}`);
+        }
+
+        store.setStage("validate");
+        let evalResult;
+        if (evaluation?.enabled) {
+          store.log("info", "Running evaluation (build/test)…");
+          evalResult = await runEvaluation(implPath, evaluation);
+          store.log(evalResult.passed ? "info" : "warn", `Evaluation ${evalResult.passed ? "passed" : "failed"}.`);
+        }
+        run.validatorReport = await runValidator(validator, implPath, config.branch, run.judgePlan, evalResult);
+        const currVerdict = run.validatorReport.verdict;
+
+        if (implError) {
+          // A failed/partial implementation must never auto-PR — let a human decide.
+          store.log("warn", "Implementation did not complete — escalating to human review.");
+          break;
+        }
+        if (currVerdict === "PASS") break;
+        if (run.iterations >= maxIter) {
+          store.log("warn", "Max iterations — escalating to HIL");
+          break;
+        }
+        if (isStalled({ prevPlanSig, currPlanSig, prevVerdict, currVerdict })) {
+          store.log("warn", "No progress (same plan, no improvement) — escalating to HIL");
+          break;
+        }
+
+        // Feed this iteration's findings into the next judge call.
+        validatorFeedback = formatValidatorFeedback(run.validatorReport);
+        prevPlanSig = currPlanSig;
+        prevVerdict = currVerdict;
+        store.log("warn", `Validator ${currVerdict} — retrying with feedback…`);
+      }
+
+      // ── HIL ──────────────────────────────────────────────────────────────────
+      store.setStage("hil");
+      await runHIL();
+      run.hilResponse = store.getState()!.hilResponse!;
+
+      if (run.hilResponse.decision === "abort") {
+        store.setStage("aborted");
+        store.log("info", "Aborted by reviewer.");
+        await cleanup(config.repoPath, panelists, implPath);
+        return;
+      }
+
+      if (run.hilResponse.decision === "revise_plan") {
+        store.log("info", "Returning to judge with reviewer notes…");
+        revisePlanNotes = run.hilResponse.revisePlanInstructions;
+        continue planLoop; // reuse panel results, re-run the judge
+      }
+
+      if (run.hilResponse.decision === "revise_implementation") {
+        store.log("info", "Revising implementation…");
+        if (run.judgePlan && run.hilResponse.reviseImplInstructions) {
+          run.judgePlan.tasks.push({
+            id: `hil-${Date.now()}`, file: ".", action: "refactor",
+            instruction: run.hilResponse.reviseImplInstructions,
+            rationale: "Human reviewer requested", priority: "P0", source: ["hil"],
+          });
+          await runImplementor(implPath, run.judgePlan, mode);
+
+          // Re-validate the human-requested change before opening the PR.
+          store.setStage("validate");
+          const reEval = evaluation?.enabled ? await runEvaluation(implPath, evaluation) : undefined;
+          run.validatorReport = await runValidator(validator, implPath, config.branch, run.judgePlan, reEval);
+          if (run.validatorReport.verdict === "REJECT") {
+            store.log("warn", "HIL revision failed validation — proceeding to PR anyway.");
+          }
+        }
+      }
+
+      break; // approve / approve_with_notes / revise_implementation → proceed to PR
+    }
+
+    // ── PR ────────────────────────────────────────────────────────────────────
+    store.setStage("pr");
+    store.log("info", "Creating pull request…");
+    const prUrl = await createPR(config.repoPath, implPath, {
+      ...run,
+      panelResults:    run.panelResults,
+      judgePlan:       run.judgePlan,
+      validatorReport: run.validatorReport,
+      hilResponse:     run.hilResponse,
+    }, forge);
+    store.setPRUrl(prUrl);
+    store.setDone();
+    store.log("info", `PR created: ${prUrl}`);
+
+    // Clean up implementation worktree now that the branch has been pushed
+    await cleanup(config.repoPath, panelists, implPath);
+
+  } catch (e) {
+    store.setError(String(e));
+    await cleanup(config.repoPath, panelists, implPath);
+    throw e;
+  }
+  // No finally flag to clear: store.isIdle() (currentStage done/aborted) is
+  // the single source of truth that re-enables a new run.
 }
 
 async function cleanup(

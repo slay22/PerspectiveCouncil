@@ -140,6 +140,18 @@ class StateStore {
     return this.state;
   }
 
+  /**
+   * True when no run is in flight — i.e. there is no state yet, or the most
+   * recent run has reached a terminal stage ("done" or "aborted"). This is the
+   * single source of truth for "can a new run start?"; do NOT keep a separate
+   * boolean flag in the conductor — it can drift out of sync with the store.
+   */
+  isIdle(): boolean {
+    const s = this.state;
+    if (!s) return true;
+    return s.currentStage === "done" || s.currentStage === "aborted";
+  }
+
   snapshot(): RunState {
     if (!this.state) throw new Error("Store not initialized");
     return structuredClone(this.state);
