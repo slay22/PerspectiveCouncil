@@ -9,7 +9,8 @@ export async function runJudge(
   originalPrompt: string,
   panelResults: PanelResult[],
   revisionNotes?: string,
-  validatorFeedback?: string
+  validatorFeedback?: string,
+  parentSignal?: AbortSignal,
 ): Promise<JudgePlan> {
   store.emit_({ type: "judge_started", ts: Date.now() });
   store.log("info", `${config.label} (${config.tool}) reading panel reports…`);
@@ -35,6 +36,7 @@ export async function runJudge(
     userMessage:  `## Project Context\n${originalPrompt}\n\n---\n\n## Panel Analyses\n${sections}\n${revisionSection}${feedbackSection}\n---\n\nNow produce the implementation plan JSON.`,
     label:        config.label,
     timeoutMs:    600_000,
+    parentSignal,
   }, JudgePlanSchema);
 
   store.setJudgePlan(plan);

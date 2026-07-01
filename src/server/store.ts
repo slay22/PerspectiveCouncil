@@ -102,6 +102,10 @@ class StateStore {
   private state: RunState | null = null;
   private subscribers: Set<Subscriber> = new Set();
   private hilResolve: ((response: HILResponse) => void) | null = null;
+  // Run-level cancel controller. Created by the conductor at run start, signalled
+  // by abortCurrentRun() (POST /api/run/abort / Telegram /cancel). Threads into
+  // every CLI call so an in-flight agent process is killed.
+  private abortController: AbortController | null = null;
 
   // ── Init ───────────────────────────────────────────────────────────────────
 
@@ -113,6 +117,7 @@ class StateStore {
     panelists: Array<{ id: string; label: string; icon: string; model: string }>;
     maxIterations: number;
   }): void {
+    this.abortController = new AbortController();
     this.state = {
       runId:          config.runId,
       repoPath:       config.repoPath,
@@ -150,6 +155,32 @@ class StateStore {
     const s = this.state;
     if (!s) return true;
     return s.currentStage === "done" || s.currentStage === "aborted";
+  }
+
+  /**
+   * The run-level abort signal. The conductor passes this to every CLI call so
+   * an in-flight agent process is killed on cancellation. Returns undefined
+   * when no run is active (so a stale subscriber doesn't wire up a dead signal).
+   */
+  abortSignal(): AbortSignal | undefined {
+    return this.abortController?.signal;
+  }
+
+  /**
+   * Cancel the in-flight run: signal every agent CLI to die, reject any pending
+   * HIL gate, and mark the run aborted. No-op when nothing is running.
+   */
+  abortCurrentRun(): boolean {
+    if (this.isIdle()) return false;
+    this.abortController?.abort();
+    // Releasing a pending HIL promise lets runPipeline unwind to its cleanup
+    // path instead of hanging on a reviewer who may never respond.
+    if (this.hilResolve) {
+      this.hilResolve({ decision: "abort", reviewer: "cancel-endpoint", notes: undefined, revisePlanInstructions: undefined, reviseImplInstructions: undefined });
+      this.hilResolve = null;
+    }
+    this.setError("Run cancelled");
+    return true;
   }
 
   snapshot(): RunState {

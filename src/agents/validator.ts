@@ -12,7 +12,8 @@ export async function runValidator(
   worktreePath: string,
   baseBranch: string,
   plan: JudgePlan,
-  evalResult?: EvalResult
+  evalResult?: EvalResult,
+  parentSignal?: AbortSignal,
 ): Promise<ValidatorReport> {
   store.log("info", `${config.label} (${config.tool}) collecting diff…`);
 
@@ -57,6 +58,7 @@ export async function runValidator(
     userMessage:  `## Judge's Plan\n${planSummary}\n\n## Files Changed\n${changedFiles.join("\n") || "(none)"}\n\n## Git Diff\n\`\`\`diff\n${diffForPrompt}\n\`\`\`\n${evalSection ? `\n${evalSection}\n` : ""}\nValidate plan adherence.`,
     label:        config.label,
     timeoutMs:    300_000,
+    parentSignal,
   }, ValidatorReportSchema);
 
   // A run that fails build/test cannot be a PASS, regardless of plan adherence.

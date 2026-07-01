@@ -1,14 +1,14 @@
 import { $ } from "bun";
-import * as fs from "fs/promises";
 import * as path from "path";
-import { writeTempFile } from "../core/cli-runner.ts";
+import { runCLI } from "../core/cli-runner.ts";
 import { store } from "../server/store.ts";
 import type { JudgePlan, PlanTask, PipelineMode } from "../core/types.ts";
 
 export async function runImplementor(
   worktreePath: string,
   plan: JudgePlan,
-  mode: PipelineMode = "maintenance"
+  mode: PipelineMode = "maintenance",
+  parentSignal?: AbortSignal,
 ): Promise<void> {
   const sorted = [...plan.tasks].sort((a, b) => {
     const order = { P0: 0, P1: 1, P2: 2 };
@@ -16,37 +16,42 @@ export async function runImplementor(
   });
 
   for (const task of sorted) {
-    await executeTask(worktreePath, task, mode);
+    await executeTask(worktreePath, task, mode, parentSignal);
   }
 }
 
-async function executeTask(worktreePath: string, task: PlanTask, mode: PipelineMode): Promise<void> {
+async function executeTask(
+  worktreePath: string,
+  task: PlanTask,
+  mode: PipelineMode,
+  parentSignal?: AbortSignal,
+): Promise<void> {
   store.taskStarted(task.id);
   store.log("info", `Implementing [${task.priority}] ${task.id}: ${task.action} ${task.file}`);
 
-  const systemFile = await writeTempFile(buildSystemPrompt(worktreePath, task, mode), `task-${task.id}`);
-
   try {
-    const result = await $`claude \
-      --print \
-      --no-interactive \
-      --allowedTools "Edit,Write,Read,MultiEdit" \
-      --add-dir ${worktreePath} \
-      --system-prompt ${systemFile} \
-      "Implement the task described in your instructions. Work only in the provided directory."`
-      .cwd(worktreePath)
-      .nothrow();
-
-    if (result.exitCode !== 0) {
-      store.taskFailed(task.id, result.stderr.toString());
-      throw new Error(`Claude Code failed on ${task.id}: ${result.stderr}`);
-    }
+    await runCLI({
+      tool:         "claude",
+      systemPrompt: buildSystemPrompt(worktreePath, task, mode),
+      userMessage:  "Implement the task described in your instructions. Work only in the provided directory.",
+      cwd:          worktreePath,
+      label:        `implementor/${task.id}`,
+      timeoutMs:    600_000,
+      parentSignal,
+      // Limit the implementor to file-editing tools and grant the worktree dir
+      // so it can read/write only within the isolated implementation worktree.
+      extraArgs:    [
+        "--allowedTools", "Edit,Write,Read,MultiEdit",
+        "--add-dir", worktreePath,
+      ],
+    });
 
     await commitTask(worktreePath, task);
     store.taskDone(task.id);
     store.log("info", `✓ ${task.id} committed`);
-  } finally {
-    await fs.unlink(systemFile).catch(() => {});
+  } catch (e) {
+    store.taskFailed(task.id, e instanceof Error ? e.message : String(e));
+    throw e;
   }
 }
 

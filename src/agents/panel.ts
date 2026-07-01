@@ -7,9 +7,9 @@ import type { PanelistConfig } from "../../config/panelists.ts";
 
 export async function runPanel(
   panelists: PanelistConfig[],
-  opts: { specText?: string } = {}
+  opts: { specText?: string; parentSignal?: AbortSignal } = {}
 ): Promise<PanelResult[]> {
-  const settled = await Promise.allSettled(panelists.map((p) => runPanelist(p, opts.specText)));
+  const settled = await Promise.allSettled(panelists.map((p) => runPanelist(p, opts.specText, opts.parentSignal)));
   const results: PanelResult[] = [];
 
   for (const [i, outcome] of settled.entries()) {
@@ -31,7 +31,7 @@ export async function runPanel(
   return results;
 }
 
-async function runPanelist(panelist: PanelistConfig, specText?: string): Promise<PanelResult> {
+async function runPanelist(panelist: PanelistConfig, specText?: string, parentSignal?: AbortSignal): Promise<PanelResult> {
   store.panelistStarted(panelist.id);
 
   let userMessage: string;
@@ -55,6 +55,7 @@ async function runPanelist(panelist: PanelistConfig, specText?: string): Promise
     cwd:          panelist.worktreePath,   // run inside the worktree
     label:        panelist.label,
     timeoutMs:    600_000,
+    parentSignal,
   });
 
   const panelistId = PanelistIdSchema.parse(panelist.id);

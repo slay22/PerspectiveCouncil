@@ -57,7 +57,22 @@ let offset = 0;
 let polling = false;
 
 const subscribedChats  = new Set<number>();
-const awaitingNotes    = new Map<number, { decision: HILDecision; reviewer: string }>();
+// Free-text notes awaiting a follow-up message. Entries are bounded by a TTL
+// and only consumed when a HIL review is actually pending (see handleMessage)
+// so a stray message days later can't inject a bogus HIL response.
+const AWAITING_NOTES_TTL_MS = 10 * 60 * 1000;
+const awaitingNotes = new Map<number, { decision: HILDecision; reviewer: string; ts: number }>();
+
+function clearStaleAwaitingNotes(): void {
+  const now = Date.now();
+  for (const [chatId, entry] of awaitingNotes) {
+    if (now - entry.ts > AWAITING_NOTES_TTL_MS) awaitingNotes.delete(chatId);
+  }
+}
+
+function clearAllAwaitingNotes(): void {
+  awaitingNotes.clear();
+}
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
@@ -146,11 +161,19 @@ async function handleMessage(msg: TgMessage): Promise<void> {
   }
 
   // ── Intercept notes awaiting free-text ────────────────────────────────────
+  clearStaleAwaitingNotes();
   const pending = awaitingNotes.get(chatId);
-  if (pending && !text.startsWith("/")) {
+  // Only consume a free-text note if a HIL review is ACTUALLY pending AND the
+  // entry hasn't expired. Otherwise a stray message days later (with no run
+  // active) would inject a bogus HIL response into the store.
+  if (pending && !text.startsWith("/") && store.getState()?.hilPending === true) {
     awaitingNotes.delete(chatId);
     submitHIL(chatId, pending.decision, pending.reviewer, text);
     return;
+  }
+  if (pending && !text.startsWith("/")) {
+    // Stale (no pending HIL) — drop it so the next /run starts clean.
+    awaitingNotes.delete(chatId);
   }
 
   const [cmd, ...args] = text.split(/\s+/);
@@ -253,6 +276,14 @@ async function handleMessage(msg: TgMessage): Promise<void> {
       break;
     }
 
+    case "/cancel": {
+      // Cancel the WHOLE in-flight run (not just the HIL gate): kills any
+      // agent CLI and unwinds the pipeline. No-op when nothing is running.
+      const ok = store.abortCurrentRun();
+      await send(chatId, ok ? "🛑 Run cancelled." : "Nothing to cancel — no run in progress.");
+      break;
+    }
+
     default:
       if (text.startsWith("/")) await send(chatId, "Unknown command. Send /help");
   }
@@ -265,6 +296,11 @@ async function handleCallback(cb: TgCallbackQuery): Promise<void> {
   const msgId    = cb.message?.message_id;
   const data     = cb.data ?? "";
   const reviewer = senderName(undefined, cb);
+
+  // Defense-in-depth: handleMessage enforces the chat allowlist, but the inline
+  // keyboard callback arrives via a separate update path. Don't trust that the
+  // keyboard was only ever shown to an allowed chat — check it here too.
+  if (ALLOWED_CHAT_IDS.size > 0 && !ALLOWED_CHAT_IDS.has(chatId)) return;
 
   await tgCall("answerCallbackQuery", { callback_query_id: cb.id });
 
@@ -284,7 +320,7 @@ async function handleCallback(cb: TgCallbackQuery): Promise<void> {
       : decision === "revise_plan_ask"
       ? "revise_plan"
       : "revise_implementation";
-    awaitingNotes.set(chatId, { decision: hilDecision, reviewer });
+    awaitingNotes.set(chatId, { decision: hilDecision, reviewer, ts: Date.now() });
     return;
   }
 
@@ -309,6 +345,7 @@ function submitHIL(
   reviseImplInstructions?: string,
   editMsgId?: number,
 ): void {
+  if (store.getState()?.hilPending !== true) return; // no review to resolve
   store.setHILResponse({ decision, reviewer, notes, revisePlanInstructions, reviseImplInstructions });
 
   const label: Record<HILDecision, string> = {
@@ -328,7 +365,7 @@ function submitHIL(
 }
 
 async function promptNotes(chatId: number, decision: HILDecision, reviewer: string, prompt: string): Promise<void> {
-  awaitingNotes.set(chatId, { decision, reviewer });
+  awaitingNotes.set(chatId, { decision, reviewer, ts: Date.now() });
   await send(chatId, prompt);
 }
 
@@ -340,6 +377,14 @@ async function handleStoreEvent(event: PipelineEvent): Promise<void> {
   let msg: string | null = null;
 
   switch (event.type) {
+    // Run boundaries: drop any half-finished free-text note flows so a message
+    // from a previous run can't land in the next one's HIL gate.
+    case "run_started":
+    case "pipeline_done":
+    case "pipeline_error":
+      clearAllAwaitingNotes();
+      break;
+
     case "stage_changed": {
       const labels: Record<string, string> = {
         worktrees:  "🌲 Setting up worktrees…",

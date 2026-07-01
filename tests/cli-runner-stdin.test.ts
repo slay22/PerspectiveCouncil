@@ -79,4 +79,26 @@ describe("runCLI routes the user message via stdin (not argv)", () => {
       timeoutMs: 150,
     })).rejects.toThrow(/timed out after 150ms/);
   });
+
+  it("a run-level parentSignal cancel aborts the child and surfaces 'cancelled'", async () => {
+    await dirStub("claude", ["#!/bin/sh", "sleep 30"]);
+    const parent = new AbortController();
+    const p = runCLI({
+      tool: "claude", systemPrompt: "sys", userMessage: "x", cwd: dir,
+      timeoutMs: 60_000, parentSignal: parent.signal,
+    });
+    // Give the stub a moment to start, then cancel the run.
+    setTimeout(() => parent.abort(), 100);
+    await expect(p).rejects.toThrow(/run cancelled/);
+  });
+
+  it("an already-aborted parentSignal cancels before the child runs", async () => {
+    await dirStub("claude", ["#!/bin/sh", "echo should-not-run"]);
+    const parent = new AbortController();
+    parent.abort();
+    await expect(runCLI({
+      tool: "claude", systemPrompt: "sys", userMessage: "x", cwd: dir,
+      parentSignal: parent.signal,
+    })).rejects.toThrow(/run cancelled/);
+  });
 });

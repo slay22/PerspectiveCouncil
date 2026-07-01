@@ -90,6 +90,13 @@ export function buildFetchHandler(apiToken: string) {
       return handleRun(req);
     }
 
+    // Cancel the in-flight run: signals every agent CLI to die and rejects any
+    // pending HIL gate so runPipeline unwinds to cleanup. No-op when idle.
+    if (url.pathname === "/api/run/abort" && req.method === "POST") {
+      if (!authorized(req, apiToken)) return UNAUTHORIZED();
+      return json({ ok: store.abortCurrentRun() });
+    }
+
     if (url.pathname === "/api/config" && req.method === "GET") {
       if (!authorized(req, apiToken)) return UNAUTHORIZED();
       return handleGetConfig();

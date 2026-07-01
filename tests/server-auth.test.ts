@@ -109,4 +109,21 @@ describe("buildFetchHandler routing + auth", () => {
     const res = handler(req("/api/config"), noopServer) as Response;
     expect(res.status).toBe(401);
   });
+
+  it("POST /api/run/abort is 401 without the correct bearer", async () => {
+    const handler = buildFetchHandler("secret");
+    const res = handler(req("/api/run/abort", { method: "POST" }), noopServer) as Response;
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /api/run/abort with a token returns 200 + a boolean ok flag", async () => {
+    // The store is a process-global singleton; its idle/active state depends
+    // on test ordering. We assert routing + auth + shape, not the boolean
+    // value (store-abort.test.ts covers the idle/active semantics directly).
+    const handler = buildFetchHandler("secret");
+    const res = handler(req("/api/run/abort", { method: "POST", headers: { authorization: "Bearer secret" } }), noopServer) as Response;
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean };
+    expect(typeof body.ok).toBe("boolean");
+  });
 });

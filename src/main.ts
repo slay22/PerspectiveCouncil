@@ -136,7 +136,8 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
     const specText = mode === "greenfield"
       ? await loadSpec(config.specPath, config.projectContext)
       : undefined;
-    const panelResults = await runPanel(activePanelists, { specText });
+    const runSignal = store.abortSignal();
+    const panelResults = await runPanel(activePanelists, { specText, parentSignal: runSignal });
     run.panelResults = panelResults;
 
     // ── Plan → implement → validate → HIL loop ──────────────────────────────
@@ -179,7 +180,7 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
           evalResult = await runEvaluation(implPath, evaluation);
           store.log(evalResult.passed ? "info" : "warn", `Evaluation ${evalResult.passed ? "passed" : "failed"}.`);
         }
-        run.validatorReport = await runValidator(validator, implPath, config.branch, run.judgePlan, evalResult);
+        run.validatorReport = await runValidator(validator, implPath, config.branch, run.judgePlan, evalResult, runSignal);
         const currVerdict = run.validatorReport.verdict;
 
         if (implError) {
@@ -263,7 +264,9 @@ export async function runPipeline(config: ConductorConfig): Promise<void> {
     await cleanup(config.repoPath, panelists, implPath);
 
   } catch (e) {
-    store.setError(String(e));
+    // If the run was cancelled via the abort endpoint, the store is already in
+    // the "aborted" stage; don't overwrite with a "run cancelled" error log.
+    if (store.getState()?.currentStage !== "aborted") store.setError(String(e));
     await cleanup(config.repoPath, panelists, implPath);
     throw e;
   }

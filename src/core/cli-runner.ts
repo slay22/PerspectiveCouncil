@@ -17,6 +17,8 @@ export interface CliRunOptions {
   cwd?:         string;
   label?:       string;
   timeoutMs?:   number;              // optional timeout for the CLI call
+  parentSignal?: AbortSignal | undefined; // run-level cancel; aborts the child
+  extraArgs?:   string[] | undefined; // extra argv appended (e.g. --allowedTools)
 }
 
 // ─── Unified Runner ───────────────────────────────────────────────────────────
@@ -30,17 +32,31 @@ export async function runCLI(opts: CliRunOptions): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  // Link an external (run-level) cancel signal: when the parent aborts, abort
+  // our internal controller so spawnCli kills the child. Either route fires.
+  const parentSignal = opts.parentSignal;
+  const onParentAbort = () => controller.abort();
+  if (parentSignal) {
+    if (parentSignal.aborted) controller.abort();
+    else parentSignal.addEventListener("abort", onParentAbort, { once: true });
+  }
+
   try {
     return await runCLIInner(opts, controller.signal);
   } catch (e) {
-    // A timeout fires controller.abort(); spawnCli surfaces that as a thrown
-    // error after the killed process exits. Map it to a clear timeout message.
+    // A cancel/timeout aborts the internal controller; spawnCli surfaces that as
+    // a thrown error after the killed process exits. Distinguish the two:
+    // a parent-initiated abort is a cancel; otherwise it's our timeout.
     if (controller.signal.aborted) {
+      if (parentSignal?.aborted) {
+        throw new Error(`[${opts.label ?? opts.tool}] run cancelled`);
+      }
       throw new Error(`[${opts.label ?? opts.tool}] CLI call timed out after ${timeoutMs}ms`);
     }
     throw e;
   } finally {
     clearTimeout(timer);
+    if (parentSignal) parentSignal.removeEventListener("abort", onParentAbort);
   }
 }
 
@@ -164,6 +180,7 @@ async function runClaude(opts: CliRunOptions, signal: AbortSignal): Promise<stri
       "claude", "--print",  // --print is already non-interactive; old --no-interactive was rejected by claude.
       ...(opts.model ? ["--model", opts.model!] : [] as string[]),
       "--system-prompt-file", systemFile,
+      ...(opts.extraArgs ?? [] as string[]),  // e.g. --allowedTools, --add-dir
     ];
     return await spawnCli({
       cmd, cwd: opts.cwd, stdinFile: userFile, signal,

@@ -27,7 +27,11 @@ export interface EvalResult {
 const STEP_ORDER: EvalStep[] = ["install", "build", "test", "run"];
 const OUTPUT_LIMIT = 4000;
 
-export async function runEvaluation(worktreePath: string, config: EvaluationConfig): Promise<EvalResult> {
+export async function runEvaluation(
+  worktreePath: string,
+  config: EvaluationConfig,
+  parentSignal?: AbortSignal,
+): Promise<EvalResult> {
   if (config.enabled === false) return { ran: false, passed: true, steps: [] };
 
   const cwd = config.cwd ? path.join(worktreePath, config.cwd) : worktreePath;
@@ -44,7 +48,14 @@ export async function runEvaluation(worktreePath: string, config: EvaluationConf
       continue;
     }
 
-    const res = await runCommand(command, cwd, timeoutMs);
+    // A run-level cancel aborts the whole evaluation immediately.
+    if (parentSignal?.aborted) {
+      steps.push({ step, command, ok: false, exitCode: null, output: "[cancelled]", skipped: true });
+      failed = true;
+      continue;
+    }
+
+    const res = await runCommand(command, cwd, timeoutMs, parentSignal);
     steps.push({ step, command, ...res });
     if (!res.ok) failed = true;
   }
@@ -57,8 +68,10 @@ async function runCommand(
   command: string,
   cwd: string,
   timeoutMs: number,
+  parentSignal?: AbortSignal,
 ): Promise<{ ok: boolean; exitCode: number | null; output: string }> {
   let timedOut = false;
+  let cancelled = false;
   let proc;
   try {
     proc = Bun.spawn(["sh", "-c", command], { cwd, stdout: "pipe", stderr: "pipe" });
@@ -67,16 +80,24 @@ async function runCommand(
   }
 
   const timer = setTimeout(() => { timedOut = true; proc.kill(); }, timeoutMs);
+  const onAbort = () => { cancelled = true; try { proc.kill(); } catch { /* exited */ } };
+  if (parentSignal) {
+    if (parentSignal.aborted) { cancelled = true; proc.kill(); }
+    else parentSignal.addEventListener("abort", onAbort, { once: true });
+  }
   try {
-    const [stdout, stderr] = await Promise.all([
+    // Drain stdout/stderr CONCURRENTLY with exit so a verbose build (> pipe
+    // buffer) can't deadlock us.
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
     ]);
-    const exitCode = await proc.exited;
-    const output = truncate((stdout + stderr).trim() + (timedOut ? "\n[timed out]" : ""));
-    return { ok: exitCode === 0 && !timedOut, exitCode: timedOut ? null : exitCode, output };
+    const output = truncate((stdout + stderr).trim() + (timedOut ? "\n[timed out]" : "") + (cancelled ? "\n[cancelled]" : ""));
+    return { ok: exitCode === 0 && !timedOut && !cancelled, exitCode: (timedOut || cancelled) ? null : exitCode, output };
   } finally {
     clearTimeout(timer);
+    if (parentSignal) parentSignal.removeEventListener("abort", onAbort);
   }
 }
 

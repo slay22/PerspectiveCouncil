@@ -233,6 +233,8 @@ When the validator passes, the pipeline pauses for your review in the browser UI
 | **Revise implementation** | Send your instructions back to Claude Code |
 | **Abort** | Discard all changes and clean up worktrees |
 
+You can also **cancel a run that's in flight** (not just at the HIL gate): `POST /api/run/abort` from the UI, or `/cancel` in Telegram. This signals every running agent CLI to terminate and unwinds the pipeline to cleanup — no need to wait out a hung stage or its timeout.
+
 ---
 
 ## 🧪 Development
