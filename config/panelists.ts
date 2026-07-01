@@ -16,7 +16,19 @@ export interface PanelistConfig extends AgentConfig {
 
 export type { CouncilConfig, AgentConfig };
 
-// ─── Config Path Resolution ───────────────────────────────────────────────────
+// ─── Path Safety ──────────────────────────────────────────────────────────────
+// promptFile values are attacker-influenceable (POST /api/config), so resolved
+// paths must stay rooted under configDir. Used by the config loader AND the
+// prompt-file upload handler so the two share one definition of "inside".
+
+export function assertWithin(base: string, target: string): void {
+  const b = base.endsWith(path.sep) ? base : base + path.sep;
+  if (target !== base && !target.startsWith(b)) {
+    throw new Error(`Path escapes the allowed directory: ${target} (base ${base})`);
+  }
+}
+
+// ─── Config Path Resolution ───────────────────────────────────────────────────────────
 // When running from source, config lives next to this file (config/panelists.json).
 // When running as a compiled binary, import.meta.dir points to a virtual
 // filesystem, so we fall back to the current working directory or an env var.
@@ -81,9 +93,15 @@ export function loadConfig(
   const resolvePrompt = (agent: { systemPrompt?: string; promptFile?: string }): string => {
     if (agent.promptFile) {
       let filePath = path.resolve(configDir, agent.promptFile);
+      // Sandbox: promptFile is attacker-influenceable via POST /api/config.
+      // Refuse to read anything that escapes the config dir (LFI primitive).
+      assertWithin(configDir, filePath);
       if (mode === "greenfield") {
         const variant = path.join(path.dirname(filePath), "greenfield", path.basename(filePath));
-        if (fs.existsSync(variant)) filePath = variant;
+        if (fs.existsSync(variant)) {
+          assertWithin(configDir, variant);
+          filePath = variant;
+        }
       }
       return fs.readFileSync(filePath, "utf-8");
     }
@@ -120,6 +138,14 @@ export function loadConfig(
 export function saveConfig(raw: unknown, configPath?: string): void {
   const target = resolveConfigPath(configPath);
   const council = CouncilConfigSchema.parse(raw);
+  // Validate promptFile paths resolve under the config dir *at save time* so an
+  // attacker cannot store an escaping path in panelists.json for later load.
+  const configDir = path.dirname(target);
+  for (const agent of [council.judge, council.validator, ...council.panelists]) {
+    if (agent.promptFile) {
+      assertWithin(configDir, path.resolve(configDir, agent.promptFile));
+    }
+  }
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, JSON.stringify(council, null, 2) + "\n", "utf-8");
 }

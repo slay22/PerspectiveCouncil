@@ -1,6 +1,6 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
 import { join, dirname, resolve as resolvePath } from "path";
-import { resolveConfigPath, saveConfig } from "../../config/panelists.ts";
+import { resolveConfigPath, saveConfig, assertWithin } from "../../config/panelists.ts";
 import { getEmbeddedConfig } from "../config-embed.ts";
 
 // ─── GET /api/config ──────────────────────────────────────────────────────────
@@ -71,7 +71,9 @@ export async function handleUploadPromptFile(req: Request): Promise<Response> {
     const promptsDir = resolvePath(join(dirname(configPath), "prompts"));
     mkdirSync(promptsDir, { recursive: true });
     const target = resolvePath(join(promptsDir, safe));
-    if (!target.startsWith(promptsDir + "/") && target !== promptsDir) {
+    try {
+      assertWithin(promptsDir, target);
+    } catch {
       return json({ error: "Invalid filename" }, 400);
     }
 
