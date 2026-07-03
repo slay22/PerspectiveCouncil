@@ -139,6 +139,37 @@ export function stopPolling(): void {
   polling = false;
 }
 
+/**
+ * Test seam: override the Telegram API transport so the handlers can be
+ * exercised without a network. The stub returns a not-ok sentinel for any
+ * method, so handlers that read `result` short-circuit harmlessly. Tests that
+ * need to assert on send/edit messages can pass a spy that records calls.
+ */
+export function setTgCallForTest(stub: ((method: string, body: Record<string, unknown>) => Promise<any>) | null): void {
+  tgCallImpl = stub ?? defaultTgCall;
+}
+
+/**
+ * Test seam: invoke the message/callback handlers directly with synthetic
+ * updates. Not part of the public API — used by tests/telegram.test.ts.
+ */
+export { handleMessage, handleCallback };
+
+/**
+ * Test seam: reset module-level state between cases (chat allowlist, pending
+ * note flows, subscribed chats, the injected runner).
+ */
+export function resetTelegramForTest(opts: {
+  allowedChatIds?: number[];
+  onRun?: (config: ConductorConfig) => Promise<void>;
+}): void {
+  BOT_TOKEN = "test";
+  ALLOWED_CHAT_IDS = new Set(opts.allowedChatIds ?? []);
+  pipelineRunner = opts.onRun ?? null;
+  subscribedChats.clear();
+  clearAllAwaitingNotes();
+}
+
 // ─── Update Router ────────────────────────────────────────────────────────────
 
 async function handleUpdate(update: TgUpdate): Promise<void> {
@@ -529,7 +560,7 @@ interface TgApiResponse {
   description?: string;
 }
 
-async function tgCall(method: string, body: Record<string, unknown>): Promise<any> {
+const defaultTgCall = async function tgCall(method: string, body: Record<string, unknown>): Promise<any> {
   if (!BOT_TOKEN) return null;
   try {
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
@@ -548,6 +579,11 @@ async function tgCall(method: string, body: Record<string, unknown>): Promise<an
     console.error(`[Telegram] ${method} failed:`, e);
     return null;
   }
+};
+
+let tgCallImpl = defaultTgCall;
+async function tgCall(method: string, body: Record<string, unknown>): Promise<any> {
+  return tgCallImpl(method, body);
 }
 
 function senderName(msg?: TgMessage, cb?: TgCallbackQuery): string {

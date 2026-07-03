@@ -32,7 +32,7 @@ export async function createPR(
   const pushed = await $`git -C ${implWorktreePath} push ${remote} ${implBranch}`.nothrow();
   if (pushed.exitCode !== 0) {
     store.log("warn", `Could not push ${implBranch} to '${remote}': ${pushed.stderr.toString().trim()}`);
-    return manualFallback(run.id, implBranch, run.branch, title, body, "push failed");
+    return manualFallback(run.id, implBranch, run.branch, title, body, `push failed: ${pushed.stderr.toString().trim().slice(0,200)}`);
   }
 
   // Create the PR/MR via the configured forge (CLI if present, else REST API).
