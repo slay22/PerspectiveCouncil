@@ -121,6 +121,10 @@ export function buildFetchHandler(apiToken: string) {
       return new Response(injected, { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
 
+    if (url.pathname.startsWith("/vendor/")) {
+      return serveVendor(url.pathname);
+    }
+
     return new Response("Not found", { status: 404 });
   };
 }
@@ -223,6 +227,38 @@ async function handleRun(req: Request): Promise<Response> {
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status, headers: { "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * Serves the same-origin vendor JS bundle (React, ReactDOM, Babel) from
+ * src/ui/vendor/. Resolves the directory relative to this module so it works
+ * regardless of process.cwd() and refuses anything that escapes it.
+ *
+ * No auth: the UI's index.html already gates the API surface with the injected
+ * API token, and CDN-hosted equivalents had no auth either. Reverse-proxy
+ * operators can layer additional access control at the proxy if needed.
+ */
+function serveVendor(pathname: string): Response {
+  const VENDOR_DIR = path.resolve(import.meta.dir, "..", "ui", "vendor");
+  // Strip the leading "/vendor/"; reject empty, dotfiles, traversal, slashes.
+  const req = pathname.slice("/vendor/".length);
+  if (!req || req.includes("/") || req.includes("\\") || req.includes("..")) {
+    return new Response("Forbidden", { status: 403 });
+  }
+  const safe = path.basename(req);
+  const target = path.join(VENDOR_DIR, safe);
+  // Final invariant: target must live inside VENDOR_DIR.
+  if (!target.startsWith(VENDOR_DIR + path.sep) && target !== VENDOR_DIR) {
+    return new Response("Forbidden", { status: 403 });
+  }
+  const file = Bun.file(target);
+  if (!file.size) return new Response("Not found", { status: 404 });
+  return new Response(file, {
+    headers: {
+      "Content-Type": "application/javascript; charset=utf-8",
+      "Cache-Control": "public, max-age=300",
+    },
   });
 }
 

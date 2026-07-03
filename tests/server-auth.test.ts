@@ -130,6 +130,47 @@ describe("buildFetchHandler routing + auth", () => {
     expect(typeof body.ok).toBe("boolean");
   });
 });
+
+// ─── /vendor/* static serving (React + Babel bundle) ────────────────────────
+// Same-origin JS bundle static-served from src/ui/vendor/. No auth — these are
+// public-same-origin assets equivalent to the CDN scripts they replaced.
+
+describe("buildFetchHandler /vendor/*", () => {
+  const handler = buildFetchHandler("");
+
+  it("serves react.production.min.js with the right content-type", async () => {
+    const res = handler(req("/vendor/react.production.min.js"), noopServer) as Response;
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/javascript/);
+    const body = await res.text();
+    // Sanity: real React UMD, starts with the license header.
+    expect(body).toMatch(/react\.production\.min\.js|Facebook, Inc/);
+  });
+
+  it("rejects traversal attempts", () => {
+    // URL canonicalization collapses ".." segments before we see them — it
+    // never reaches the vendor handler, so it falls through to the 404
+    // catch-all. The important safety net is the basename guard, exercised
+    // by the empty-segment case below.
+    expect((handler(req("/vendor/../server.ts"), noopServer) as Response).status).toBe(404);
+    // Explicitly empty segment (e.g. "/vendor/") must be rejected, not served.
+    expect((handler(req("/vendor/"), noopServer) as Response).status).toBe(403);
+  });
+
+  it("returns 404 for missing files inside the vendor dir", () => {
+    const res = handler(req("/vendor/does-not-exist.js"), noopServer) as Response;
+    expect(res.status).toBe(404);
+  });
+
+  it("does NOT require auth even when a token is configured", async () => {
+    const guarded = buildFetchHandler("secret");
+    const res = guarded(
+      req("/vendor/react-dom.production.min.js"),
+      noopServer,
+    ) as Response;
+    expect(res.status).toBe(200);
+  });
+});
 // ─── /api/run safety net: <2 active panelists rejected before launching ──────
 // The guard's root is readCouncilConfig(); the full HTTP path is gated on the
 // store singleton / pipelineRunner registration, which makes the end-to-end
