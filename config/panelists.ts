@@ -59,18 +59,22 @@ export function resolveConfigPath(configPath?: string): string {
   return defaultConfigPath();
 }
 
-// ─── Loader ───────────────────────────────────────────────────────────────────
+// ─── Loader ────────────────────────────────────────────
 // Reads panelists.json fresh on every call — no caching.
 // Edit the JSON and trigger a new run — changes apply immediately.
 // If the requested file does not exist, returns the bundled default config
 // (used by compiled binaries that have no sidecar config directory).
 
-export function loadConfig(
-  worktreeBase: string,
-  runId: string,
+/**
+ * Read + Zod-validate panelists.json (or the embedded fallback). Single entry
+ * point shared by loadConfig (conductor) and the HTTP run launcher's safety
+ * net, so the "≥2 active" rule and promptFile sandbox are checked in ONE place
+ * rather than re-implemented per callsite.
+ */
+export function readCouncilConfig(
   configPath?: string,
   mode: PipelineMode = "maintenance",
-): CouncilConfig & { panelists: PanelistConfig[] } {
+): { council: CouncilConfig; configDir: string } {
   const resolvedConfigPath = resolveConfigPath(configPath);
   const useEmbedded = !fs.existsSync(resolvedConfigPath);
 
@@ -85,7 +89,22 @@ export function loadConfig(
     const json = JSON.parse(raw);
     council = CouncilConfigSchema.parse(json);
     configDir = path.dirname(resolvedConfigPath);
+    // Sandbox promptFile paths at read time too (saveConfig checks on write;
+    // a hand-edited file or an older binary could store an escaping path).
+    for (const agent of [council.judge, council.validator, ...council.panelists]) {
+      if (agent.promptFile) assertWithin(configDir, path.resolve(configDir, agent.promptFile));
+    }
   }
+  return { council, configDir };
+}
+
+export function loadConfig(
+  worktreeBase: string,
+  runId: string,
+  configPath?: string,
+  mode: PipelineMode = "maintenance",
+): CouncilConfig & { panelists: PanelistConfig[] } {
+  const { council, configDir } = readCouncilConfig(configPath, mode);
 
   // Prompt files are resolved relative to the config file's own directory, so a
   // custom --config can ship its own prompts alongside it. In greenfield mode,

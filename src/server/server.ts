@@ -1,6 +1,6 @@
 import * as path from "path";
-import { HILResponseSchema, RunRequestSchema, CouncilConfigSchema } from "../core/schemas.ts";
-import { resolveConfigPath } from "../../config/panelists.ts";
+import { HILResponseSchema, RunRequestSchema } from "../core/schemas.ts";
+import { readCouncilConfig } from "../../config/panelists.ts";
 import { store } from "./store.ts";
 import { handleGetConfig, handlePostConfig, handleUploadPromptFile } from "./config-api.ts";
 import uiHtml from "../ui/index.html" with { type: "text" };
@@ -191,24 +191,20 @@ async function handleRun(req: Request): Promise<Response> {
     return json({ error: String(e) }, 400);
   }
 
-  // Safety net: re-validate that the persisted config has ≥ 2 active
-  // panelists. The Config UI's Zod refine catches this at save time, but
-  // a hand-edited panelists.json (or a stale embedded config in the
-  // compiled binary) might bypass it. Read the active count without
-  // re-running the full loadConfig (which needs worktreeBase + runId).
+  // Safety net: reject a run synchronously when the config is invalid or has
+  // <2 active panelists. readCouncilConfig is the same validated read path
+  // loadConfig() uses, so this stays in sync with the conductor's check (and
+  // the promptFile sandbox) instead of re-implementing a raw parse here.
   try {
-    const raw = await import("fs/promises").then((m) => m.readFile(resolveConfigPath(), "utf-8"));
-    const parsed = CouncilConfigSchema.parse(JSON.parse(raw));
-    const activeCount = parsed.panelists.filter((p) => p.active !== false).length;
+    const { council } = readCouncilConfig();
+    const activeCount = council.panelists.filter((p) => p.active !== false).length;
     if (activeCount < 2) {
       return json({
-        error: `At least 2 panelists must be active (currently ${activeCount}). ` +
-               `Edit config/panelists.json or use the Config tab.`,
+        error: `At least 2 panelists must be active (currently ${activeCount}). Edit config/panelists.json or use the Config tab.`,
       }, 400);
     }
   } catch (e) {
-    // If reading the config fails for any reason, fall through to the
-    // run attempt — the conductor's loadConfig will surface a clear error.
+    return json({ error: `Config invalid: ${e instanceof Error ? e.message : String(e)}` }, 400);
   }
 
   const config: ConductorConfig = {

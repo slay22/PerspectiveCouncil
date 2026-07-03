@@ -1,114 +1,189 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Perspective Council Config",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["panelists", "judge", "validator"],
   "properties": {
     "panelists": {
-      "type": "array",
       "minItems": 1,
-      "description": "Panelist agents that analyze the codebase in parallel",
-      "items": { "$ref": "#/definitions/agent" }
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "opencode",
+              "pi"
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "icon": {
+            "type": "string"
+          },
+          "systemPrompt": {
+            "type": "string"
+          },
+          "promptFile": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tool",
+          "label",
+          "id"
+        ],
+        "additionalProperties": false
+      }
     },
     "judge": {
-      "$ref": "#/definitions/agent",
-      "description": "Synthesizes panel results into a structured implementation plan"
-    },
-    "validator": {
-      "$ref": "#/definitions/agent",
-      "description": "Checks whether the implementation matches the plan"
-    },
-    "forge": {
-      "$ref": "#/definitions/forge",
-      "description": "Where to open the PR/MR (GitHub, GitLab, Gitea/Codeberg, Azure DevOps, or manual)"
-    },
-    "evaluation": {
-      "$ref": "#/definitions/evaluation",
-      "description": "Optional build/test/run commands that verify the implementation actually works"
-    }
-  },
-  "definitions": {
-    "evaluation": {
       "type": "object",
       "properties": {
-        "enabled": { "type": "boolean", "description": "Off by default. Executes agent-generated code — run inside the Docker sandbox." },
-        "install": { "type": "string", "description": "e.g. bun install" },
-        "build": { "type": "string", "description": "e.g. bun run build" },
-        "test": { "type": "string", "description": "e.g. bun test" },
-        "run": { "type": "string", "description": "Optional smoke command" },
-        "cwd": { "type": "string", "description": "Working dir relative to the worktree" },
-        "timeoutMs": { "type": "integer", "minimum": 1, "description": "Per-command timeout in ms (default 300000)" }
-      }
-    },
-    "forge": {
-      "type": "object",
-      "required": ["provider"],
-      "properties": {
-        "provider": {
+        "tool": {
           "type": "string",
-          "enum": ["github", "gitlab", "gitea", "azure", "manual"],
-          "description": "Forge to open the PR/MR on"
+          "enum": [
+            "claude",
+            "opencode",
+            "pi"
+          ]
         },
-        "baseUrl": {
-          "type": "string",
-          "description": "API/web base for self-hosted instances. Defaults per provider."
-        },
-        "repo": {
-          "type": "string",
-          "description": "owner/name (github/gitea), group/project (gitlab), org/project/repository (azure). Inferred from the git remote if omitted."
-        },
-        "tokenEnv": {
-          "type": "string",
-          "description": "Env var holding the API token. Defaults per provider (e.g. GITHUB_TOKEN)."
-        },
-        "remote": {
-          "type": "string",
-          "description": "Git remote to push the implementation branch to (default: origin)."
-        },
-        "cli": {
-          "type": "boolean",
-          "description": "Use the platform CLI (gh/glab/tea/az) when available (default: true)."
-        }
-      }
-    },
-    "agent": {
-      "type": "object",
-      "required": ["tool", "label"],
-      "oneOf": [
-        { "required": ["systemPrompt"] },
-        { "required": ["promptFile"] }
-      ],
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier (panelists only)"
+        "model": {
+          "type": "string"
         },
         "label": {
           "type": "string",
-          "description": "Human-readable name shown in GUI and Telegram"
+          "minLength": 1
         },
         "icon": {
-          "type": "string",
-          "description": "Emoji shown in GUI"
-        },
-        "tool": {
-          "type": "string",
-          "enum": ["claude", "opencode", "pi"],
-          "description": "Which CLI to spawn. Multiple agents can share the same tool with different models."
-        },
-        "model": {
-          "type": "string",
-          "description": "Model to pass to the CLI.\n  claude:   claude-opus-4-5 | claude-sonnet-4-5 | claude-haiku-4-5-20251001 | ...\n  opencode: anthropic/claude-opus-4-5 | openai/gpt-4o | google/gemini-2-flash | ...\n  pi:       moonshot/kimi | anthropic/claude-opus-4-5 | openai/gpt-4o | ...\nOmit to use each tool's currently configured default model."
+          "type": "string"
         },
         "systemPrompt": {
-          "type": "string",
-          "description": "System prompt injected before the user message"
+          "type": "string"
         },
         "promptFile": {
-          "type": "string",
-          "description": "Path to a Markdown file containing the system prompt. Resolved relative to panelists.json. Either systemPrompt or promptFile is required."
+          "type": "string"
         }
-      }
+      },
+      "required": [
+        "tool",
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "validator": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "opencode",
+            "pi"
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "icon": {
+          "type": "string"
+        },
+        "systemPrompt": {
+          "type": "string"
+        },
+        "promptFile": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "forge": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "github",
+            "gitlab",
+            "gitea",
+            "azure",
+            "manual"
+          ]
+        },
+        "baseUrl": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "tokenEnv": {
+          "type": "string"
+        },
+        "remote": {
+          "type": "string"
+        },
+        "cli": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "additionalProperties": false
+    },
+    "evaluation": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "install": {
+          "type": "string"
+        },
+        "build": {
+          "type": "string"
+        },
+        "test": {
+          "type": "string"
+        },
+        "run": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
     }
-  }
+  },
+  "required": [
+    "panelists",
+    "judge",
+    "validator"
+  ],
+  "additionalProperties": false
 }

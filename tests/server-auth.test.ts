@@ -1,5 +1,8 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import * as os from "os";
+import * as fs from "fs";
 import { buildFetchHandler, authorized, authorizedWs, assertSafeBind } from "../src/server/server.ts";
+import { readCouncilConfig } from "../config/panelists.ts";
 
 // ─── Pure auth helpers ───────────────────────────────────────────────────────
 
@@ -125,5 +128,51 @@ describe("buildFetchHandler routing + auth", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean };
     expect(typeof body.ok).toBe("boolean");
+  });
+});
+// ─── /api/run safety net: <2 active panelists rejected before launching ──────
+// The guard's root is readCouncilConfig(); the full HTTP path is gated on the
+// store singleton / pipelineRunner registration, which makes the end-to-end
+// variant order-dependent. Unit-test the guard logic directly instead.
+
+describe("readCouncilConfig active-count guard (shared with /api/run + loadConfig)", () => {
+  let dir = "";
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(os.tmpdir() + "/council-guard-");
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  // Pass an explicit configPath so the tests never touch the real
+  // config/panelists.json (resolveConfigPath prefers the source copy when no
+  // path is given, which would couple these tests to global file state).
+  const cfg = () => dir + "/panelists.json";
+  const write = (panelists: unknown) =>
+    fs.writeFileSync(cfg(), JSON.stringify({
+      panelists,
+      judge:     { tool: "pi",     label: "Judge",     systemPrompt: "j" },
+      validator: { tool: "claude", label: "Validator", systemPrompt: "v" },
+    }, null, 2), "utf-8");
+
+  it("throws ZodError (≥2-active refine) for a hand-edited <2-active config", () => {
+    // Write directly — saveConfig would refuse this; the runtime guard is the
+    // safety net for hand-edited or stale-embedded configs.
+    write([
+      { id: "a", label: "A", tool: "claude", systemPrompt: "x", active: true },
+      { id: "b", label: "B", tool: "pi",     systemPrompt: "y", active: false },
+    ]);
+    expect(() => readCouncilConfig(cfg())).toThrow(/At least 2 panelists must be active/);
+  });
+
+  it("parses cleanly when ≥2 are active", () => {
+    write([
+      { id: "a", label: "A", tool: "claude", systemPrompt: "x" },
+      { id: "b", label: "B", tool: "pi",     systemPrompt: "y" },
+    ]);
+    const { council } = readCouncilConfig(cfg());
+    expect(council.panelists.filter((p: { active?: boolean }) => p.active !== false).length).toBe(2);
   });
 });

@@ -16,6 +16,9 @@ Thumbs.db
 dist/
 build/
 
+# Compiled standalone binary (Bun --compile). Built locally, never committed.
+council
+
 # Temporary files
 tmp/
 temp/
@@ -26,6 +29,10 @@ temp/
 .idea/
 *.swp
 *.swo
+
+# Generated from the Zod schema by `bun run gen:schema` (kept in-tree for editors,
+# but regenerable — do not hand-edit).
+config/panelists.schema.json
 
 # Test coverage
 coverage/

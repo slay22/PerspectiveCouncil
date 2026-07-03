@@ -20,4 +20,7 @@ jobs:
 
       - run: bun run typecheck
 
+      # Fail if config/panelists.schema.json drifts from the Zod source of truth.
+      - run: bun run schema:check
+
       - run: bun test

@@ -7,7 +7,9 @@
     "start": "bun run src/main.ts",
     "dev": "bun --watch run src/main.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "gen:schema": "bun run scripts/gen-schema.ts",
+    "schema:check": "bun run scripts/gen-schema.ts --check"
   },
   "dependencies": {
     "chalk": "^5.3.0",

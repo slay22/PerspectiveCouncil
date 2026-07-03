@@ -1,6 +1,6 @@
 # Perspective Council
 
-[![CI](https://github.com/<owner>/<repo>/actions/workflows/ci.yml/badge.svg)](https://github.com/<owner>/<repo>/actions/workflows/ci.yml)
+[![CI](https://github.com/slay22/PerspectiveCouncil/actions/workflows/ci.yml/badge.svg)](https://github.com/slay22/PerspectiveCouncil/actions/workflows/ci.yml)
 
 > Multi-agent code review and implementation orchestrator.
 
